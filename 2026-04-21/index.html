@@ -29,8 +29,33 @@
     All worlds at RTF=0 (maximum speed).
   </p>
 
-  <h2>Runtime Flamegraphs (30s steady-state)</h2>
+  <h2>Loading Flamegraphs (startup + 1 iteration)</h2>
   <p class="note">Click any flamegraph to open it interactively (click frames to zoom, Ctrl+F to search).</p>
+  <table>
+    <tr><th>World</th><th>Wall-clock</th><th>Flamegraph</th></tr>
+    <tr>
+      <td>3k_shapes_static</td>
+      <td>26.0s</td>
+      <td><a href="loading/3k_shapes_static_loading.svg">Open</a></td>
+    </tr>
+    <tr>
+      <td>3k_shapes_dynamic</td>
+      <td>26.6s</td>
+      <td><a href="loading/3k_shapes_dynamic_loading.svg">Open</a></td>
+    </tr>
+    <tr>
+      <td>jetty</td>
+      <td>7.8s</td>
+      <td><a href="loading/jetty_loading.svg">Open</a></td>
+    </tr>
+    <tr>
+      <td>sensors_nonrendering</td>
+      <td>2.4s</td>
+      <td><a href="loading/sensors_nonrendering_loading.svg">Open</a></td>
+    </tr>
+  </table>
+
+  <h2>Runtime Flamegraphs (30s steady-state)</h2>
   <table>
     <tr><th>World</th><th>Stress Axis</th><th>Flamegraph</th></tr>
     <tr>
@@ -62,31 +87,6 @@
       <td>sensors_demo</td>
       <td>6 rendering sensors &mdash; Ogre2 scene-graph</td>
       <td><a href="runtime/sensors_demo.svg">Open</a></td>
-    </tr>
-  </table>
-
-  <h2>Loading Flamegraphs (startup + 1 iteration)</h2>
-  <table>
-    <tr><th>World</th><th>Wall-clock</th><th>Flamegraph</th></tr>
-    <tr>
-      <td>3k_shapes_static</td>
-      <td>26.0s</td>
-      <td><a href="loading/3k_shapes_static_loading.svg">Open</a></td>
-    </tr>
-    <tr>
-      <td>3k_shapes_dynamic</td>
-      <td>26.6s</td>
-      <td><a href="loading/3k_shapes_dynamic_loading.svg">Open</a></td>
-    </tr>
-    <tr>
-      <td>jetty</td>
-      <td>7.8s</td>
-      <td><a href="loading/jetty_loading.svg">Open</a></td>
-    </tr>
-    <tr>
-      <td>sensors_nonrendering</td>
-      <td>2.4s</td>
-      <td><a href="loading/sensors_nonrendering_loading.svg">Open</a></td>
     </tr>
   </table>
 
