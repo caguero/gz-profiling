@@ -238,7 +238,7 @@ overhead from physics engine cost --- the static variant of 3k\_shapes
 isolates ECS, transport, and scene management overhead by removing all
 DART/ODE work.
 
-CPU flamegraphs are used to identify where time goes across the full stack and prioritize optimization targets. Future validation of each optimization can use \texttt{GZ\_PROFILE} (Remotery) instrumentation for deterministic per-step before/after comparison.
+The study follows two phases. The \textbf{discovery phase} uses CPU flamegraphs to identify where time goes across the full stack and prioritize optimization targets. The \textbf{validation phase} (Section~\ref{validating-optimizations}) defines a methodology for measuring the before/after impact of each optimization using \texttt{GZ\_PROFILE} (Remotery) instrumentation, which provides deterministic per-step timing for named code scopes.
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 
@@ -316,7 +316,7 @@ gz-sim, gz-physics, gz-rendering, and gz-sensors.
 
 For the discovery phase (flamegraph captures in this study), \texttt{ENABLE\_PROFILER=OFF} is recommended. This eliminates the \textasciitilde1.5\% overhead from \texttt{\_rmt\_BeginCPUSample} calls and produces cleaner flamegraphs without Remotery frames cluttering the stacks.
 
-For future validation of optimizations, \texttt{ENABLE\_PROFILER=ON} can be used to activate Remotery scopes for deterministic per-step before/after timing comparison.
+For the validation phase (measuring before/after impact of specific optimizations), \texttt{ENABLE\_PROFILER=ON} should be used. This activates the Remotery scopes that provide per-step timing for each named code block. See Section~\ref{validating-optimizations} for the recommended validation workflow.
 
 \hypertarget{benchmark-world-selection}{%
 \subsection{Benchmark World
@@ -1315,69 +1315,76 @@ overhead}\label{priority-5-investigate-ecs-view-and-thread-barrier-overhead}}
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 
-\hypertarget{appendix}{%
-\section{Appendix}\label{appendix}}
+\section{Validating Optimizations with GZ\_PROFILE}\label{validating-optimizations}
 
-\hypertarget{a-flamegraph-svg-locations}{%
-\subsection{A: Flamegraph SVG
-Locations}\label{a-flamegraph-svg-locations}}
+The flamegraph-based analysis in this report identified optimization targets using statistical CPU sampling. To validate that each optimization delivers the expected improvement, we recommend using the \texttt{GZ\_PROFILE} (Remotery) instrumentation for before/after comparison.
 
-\textbf{Runtime} (in \texttt{profiling/captures/flamegraphs/runtime/}):
+\subsection{Why GZ\_PROFILE for validation}
 
-\begin{verbatim}
-3k_shapes_static.svg
-3k_shapes_dynamic.svg
-sensors_nonrendering.svg
-jetty_headless.svg
-gpu_lidar.svg
-sensors_demo.svg
-\end{verbatim}
+Flamegraphs are ideal for \emph{discovery} --- finding where time goes across the full stack. However, \texttt{GZ\_PROFILE} is better for \emph{measuring the effect of a specific optimization} because:
 
-\textbf{Loading} (in \texttt{profiling/captures/flamegraphs/loading/}):
+\begin{itemize}
+\tightlist
+\item \textbf{Named scopes give consistent measurement points} --- the same code block is measured every time, enabling direct comparison between baseline and optimized versions
+\item \textbf{Per-step resolution} --- Remotery shows how long each scope takes per simulation step (e.g., ``this function dropped from 4.5ms to 0.01ms per step''), not just aggregate percentages
+\item \textbf{Deterministic timing} --- flamegraphs are statistical (sampling at 997 Hz), so small improvements are hard to distinguish from noise. \texttt{GZ\_PROFILE} timestamps are deterministic
+\end{itemize}
 
-\begin{verbatim}
-3k_shapes_static_loading.svg
-3k_shapes_dynamic_loading.svg
-sensors_nonrendering_loading.svg
-jetty_loading.svg
-gpu_lidar_loading.svg
-sensors_demo_loading.svg
-\end{verbatim}
+\subsection{Validation workflow}
 
-\hypertarget{b-gz_profile-instrumentation-added}{%
-\subsection{B: GZ\_PROFILE Instrumentation
-Added}\label{b-gz_profile-instrumentation-added}}
+For each priority optimization:
 
-17 profile points added to gz-physics/dartsim: -
-\texttt{SimulationFeatures.cc}: 7 points (WorldForwardStep + 6 new
-sub-phases) - \texttt{GzCollisionDetector.cc}: 4 points (ODE + Bullet
-collide wrappers) - \texttt{SDFFeatures.cc}: 5 points (ConstructSdf*
-methods) - \texttt{KinematicsFeatures.cc}: 1 point
-(FrameDataRelativeToWorld)
+\begin{enumerate}
+\item \textbf{Baseline}: Run the benchmark world with \texttt{ENABLE\_PROFILER=ON}. Record the Remotery per-step timing for the relevant scope.
+\item \textbf{Optimize}: Apply the code change.
+\item \textbf{Re-measure}: Run the same benchmark world. Record the new per-step timing for the same scope.
+\item \textbf{Report}: Document the before/after timing and the percentage reduction.
+\end{enumerate}
 
-\hypertarget{c-loading-wall-clock-times}{%
-\subsection{C: Loading Wall-Clock
-Times}\label{c-loading-wall-clock-times}}
+\subsection{Existing GZ\_PROFILE scopes for each priority}
 
-\begin{longtable}[]{@{}ll@{}}
-\toprule\noalign{}
-World & Time \\
-\midrule\noalign{}
+As part of this study, 17 new \texttt{GZ\_PROFILE} points were added to \texttt{gz-physics/dartsim} to break the previously opaque \texttt{WorldForwardStep} call into observable sub-phases: pre-step gravity, DART world step, NaN checking, pose output, collision detection wrappers, kinematics queries, and SDF model construction methods.
+
+The following scopes are already in place to measure each optimization target:
+
+{\footnotesize
+\begin{longtable}[]{@{}lll@{}}
+\toprule
+Priority & Optimization target & GZ\_PROFILE scope \\
+\midrule
 \endhead
-\bottomrule\noalign{}
+\bottomrule
 \endlastfoot
-3k\_shapes\_static & 26.0s \\
-3k\_shapes\_dynamic & 26.6s \\
-jetty & 7.8s \\
-sensors\_nonrendering & 2.4s \\
-gpu\_lidar & 0.06s \\
-sensors\_demo & 0.03s \\
+1 & \texttt{ProcessRecreateEntitiesRemove} & \texttt{SimulationRunner::ProcessRecreateEntitiesRemove} \\
+2 & \texttt{Write(ChangedWorldPoses)} & \texttt{dartsim::Write::ChangedWorldPoses} \\
+3 & Texture decode & Scope needed --- add to \texttt{Ogre2Material.cc} \\
+4 & Broadphase for static bodies & \texttt{dartsim::OdeCollide} \\
+5 & \texttt{BitmaskContactFilter} + \texttt{updateEngineData} & Scope needed --- add to \texttt{EntityManagementFeatures.cc} \\
+6 & \texttt{DownloadAssets} + SDF re-parse & Scope needed --- add to \texttt{ServerPrivate.cc} \\
+7 & \texttt{Barrier::Wait} + ECS views & Scope exists in \texttt{SimulationRunner} \\
 \end{longtable}
+}
+
+Scopes marked ``needed'' should be added before beginning the optimization work so that the baseline measurement uses the same instrumentation as the post-optimization measurement.
+
+\subsection{Recommended benchmark worlds per priority}
+
+\begin{itemize}
+\tightlist
+\item \textbf{Priority 1} (ProcessRecreateEntities): Use \texttt{3k\_shapes\_static.sdf} (45\%) or \texttt{jetty.sdf} (15.2\%)
+\item \textbf{Priority 2} (Write ChangedWorldPoses): Use \texttt{3k\_shapes\_static.sdf} (26.8\%)
+\item \textbf{Priority 3} (texture decode): Use \texttt{jetty.sdf} (6\%)
+\item \textbf{Priority 4} (broadphase): Use \texttt{jetty.sdf} (21.9\%)
+\item \textbf{Priority 5} (BitmaskContactFilter): Use \texttt{jetty.sdf} (1.5\%)
+\item \textbf{Priority 6} (loading time): Use \texttt{3k\_shapes\_static.sdf} (26s loading)
+\item \textbf{Priority 7} (ECS/barriers): Use \texttt{sensors.sdf} (4.7\%)
+\end{itemize}
+
+All benchmark worlds with \texttt{RTF=0} are available in the repository's \texttt{worlds/} directory.
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 
-\hypertarget{references}{%
-\subsection{References}\label{references}}
+\section{References}
 
 {[}1{]} B. Gregg, ``Flame Graphs,'' \emph{ACM Queue}, vol.~14, no. 2,
 pp.~91-110, 2016. Software available at
