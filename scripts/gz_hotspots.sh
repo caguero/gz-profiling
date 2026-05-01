@@ -29,10 +29,13 @@ TOTAL=$(awk '{s+=$NF} END {print s}' "$FOLDED")
 LABEL=$(basename "$FOLDED" .folded)
 
 # Gazebo namespace pattern (regex for matching leaf functions)
-GZ_PATTERN='gz::|SimulationRunner|SimulationFeatures|SceneBroadcaster|SceneManager|RenderUtil|BaseView|Barrier::Wait|BitmaskContact|OdeCollisionObject|stbi__|Image::|SdfModelSerializer|DownloadAssets|ProcessRecreate|pybind11::initialize'
+# Uses gz:: prefix as primary match. Additional patterns for vendored/wrapped code.
+# Excludes gz::physics::ForwardStep::World (thin C++ template wrapper around DART).
+GZ_PATTERN='gz::sim::|gz::physics::dartsim::|gz::rendering::|gz::common::|gz::math::|gz::transport::|gz::plugin::|gz::msgs::|gz::sensors::|SimulationRunner::|SimulationFeatures::|gz::sim::v11::systems::|gz::sim::v11::detail::|gz::sim::v11::Entity|stbi__|gz::common::Image|SdfModelSerializer|ServerPrivate::DownloadAssets|ServerPrivate::LoadSdfRoot|pybind11::initialize'
 
 # External pattern (things we know are NOT Gazebo)
-EXT_PATTERN='dart::|dxHash|Ogre::|libnvidia|libdart|\[unknown\]|\[libdart|pthread_|_int_free|_int_malloc|malloc_consolidate|cfree|__memset|__memmove|operator new|operator delete|clone3|start_thread|\[vdso\]|\[libstdc\+\+|BoxedLcp|ConstraintSolver|ConstrainedGroup|BodyNode::|Frame::|DegreeOfFreedom::|Skeleton::|CollisionGroup::|CollisionObject::|ContactConstraint'
+# External pattern: third-party libraries + C++ stdlib containers + demangling noise
+EXT_PATTERN='dart::|dxHash|dxGeom|dxSafe|Ogre::|libnvidia|\[libdart|\[unknown\]|pthread_|_int_free|_int_malloc|malloc_consolidate|cfree|__memset|__memmove|clone3|start_thread|\[\[vdso\]\]|\[libstdc\+\+|BoxedLcp|ConstraintSolver|ConstrainedGroup|BodyNode::|Frame::get|DegreeOfFreedom::|Skeleton::|CollisionGroup::|CollisionObject::|ContactConstraint|OdeCollisionDetector|BulletCollisionDetector|std::_Hashtable|std::_Rb_tree|std::__detail|std::__cxx11|std::pair<std::|std::set<unsigned|std::unordered|std::vector|std::atomic|operator new|operator delete|^void$|^operator$|^unsigned$|^bool$|Eigen::|sdf::v|tinyxml2::|google::protobuf|zmq_|__GI_|__poll|futex|lll_mutex'
 
 echo "============================================"
 echo "  Gazebo Hotspot Analysis: $LABEL"
@@ -143,7 +146,7 @@ awk -v gz_pat="$GZ_PATTERN" '{
     # Find nearest gz:: ancestor
     gz_caller = ""
     for (i = n; i >= 1; i--) {
-        if (match(a[i], /gz::|SimulationRunner|SimulationFeatures|SceneBroadcaster|RenderUtil|ProcessRecreate|DownloadAssets/)) {
+        if (match(a[i], /gz::sim::|gz::physics::dartsim::|gz::rendering::|gz::common::|gz::transport::|SimulationRunner::|SimulationFeatures::|ServerPrivate::/)) {
             gz_caller = a[i]
             break
         }
