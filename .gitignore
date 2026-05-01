@@ -1,0 +1,11 @@
+# LaTeX build artifacts
+*.aux
+*.log
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# perf binary data (large, regenerable from scripts)
+perf_*.data
