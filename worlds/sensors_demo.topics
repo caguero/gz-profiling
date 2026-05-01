@@ -1,0 +1,6 @@
+/camera
+/depth_camera
+/rgbd_camera
+/thermal_camera
+/segmentation_camera
+/lidar

@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
-# capture_all.sh — Run all flamegraph captures for the Gazebo profiling study
+# capture_all.sh — Run flamegraph captures for all worlds in a directory
 #
-# Usage: ./capture_all.sh [--runtime-only] [--loading-only]
+# Usage: ./capture_all.sh <worlds_dir> [--runtime-only] [--loading-only]
+#
+# Each .sdf file in <worlds_dir> is captured as a headless runtime + loading
+# flamegraph. The label is derived from the filename (e.g., jetty.sdf → jetty).
+#
+# For sensor worlds that need subscribers, create a companion file
+# <world>.topics with one topic per line (e.g., gpu_lidar_sensor.topics).
 #
 # Prerequisites:
 #   - Workspace built with ENABLE_PROFILER=OFF, RelWithDebInfo, -fno-omit-frame-pointer
 #   - sudo sysctl kernel.perf_event_paranoid=1
 #   - Assets pre-cached (run each world once beforehand)
 
-set -euo pipefail
+set -eo pipefail
+
+WORLDS_DIR="${1:?Usage: $0 <worlds_dir> [--runtime-only] [--loading-only]}"
+shift
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-SRC_DIR="$WS_DIR/src"
-PROF_DIR="$WS_DIR/profiling"
-
-# Source workspace
-source "$WS_DIR/install/setup.bash"
-export GZ_CONFIG_PATH="$WS_DIR/install/share/gz:${GZ_CONFIG_PATH:-}"
-export GZ_SIM_RESOURCE_PATH="$HOME/jetty_demo/jetty_demo/models:${GZ_SIM_RESOURCE_PATH:-}"
 
 # Parse flags
 DO_RUNTIME=true
@@ -33,22 +34,33 @@ done
 DURATION=30
 
 echo "============================================"
-echo "  Gazebo Performance Profiling - Full Suite"
+echo "  Gazebo Performance Profiling"
 echo "============================================"
-echo "  Workspace: $WS_DIR"
-echo "  Duration:  ${DURATION}s per runtime capture"
-echo "  Runtime:   $DO_RUNTIME"
-echo "  Loading:   $DO_LOADING"
+echo "  Worlds dir: $WORLDS_DIR"
+echo "  Duration:   ${DURATION}s per runtime capture"
+echo "  Runtime:    $DO_RUNTIME"
+echo "  Loading:    $DO_LOADING"
 echo ""
 
-# ---------------------------------------------------------------------------
-# World definitions: label, sdf_path, run_mode, topics...
-# ---------------------------------------------------------------------------
+WORLDS_DIR="$(cd "$WORLDS_DIR" && pwd)"
+COUNT=0
 
-run_capture() {
-    local label="$1" world="$2" mode="$3"
-    shift 3
-    local topics=("$@")
+for world in "$WORLDS_DIR"/*.sdf; do
+    [ -f "$world" ] || continue
+
+    label=$(basename "$world" .sdf)
+    topics_file="${world%.sdf}.topics"
+
+    # Read sensor topics from companion file if it exists
+    topics=()
+    if [ -f "$topics_file" ]; then
+        while IFS= read -r topic; do
+            [ -n "$topic" ] && topics+=("$topic")
+        done < "$topics_file"
+        mode="headless-rendering"
+    else
+        mode="headless"
+    fi
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -66,71 +78,13 @@ run_capture() {
         echo "--- Loading capture ---"
         "$SCRIPT_DIR/gz_loading_flamegraph.sh" "$world" "$label"
     fi
-}
 
-# ---- Static worlds (isolate Gazebo framework overhead) ----
-
-run_capture \
-    "3k_shapes_static" \
-    "$PROF_DIR/worlds/3k_shapes_static.sdf" \
-    "headless"
-
-run_capture \
-    "sensors_nonrendering" \
-    "$PROF_DIR/worlds/sensors.sdf" \
-    "headless"
-
-run_capture \
-    "jetty_gui_paused" \
-    "$PROF_DIR/worlds/jetty.sdf" \
-    "gui"
-
-# ---- Dynamic worlds (full picture including physics) ----
-
-run_capture \
-    "3k_shapes_dynamic" \
-    "$PROF_DIR/worlds/3k_shapes.sdf" \
-    "headless"
-
-run_capture \
-    "jetty_headless" \
-    "$PROF_DIR/worlds/jetty.sdf" \
-    "headless"
-
-# ---- Rendering + sensor worlds ----
-# Note: sensor topics must be subscribed to force rendering pipeline to run.
-# Topics are identified per-world. Adjust if sensor names differ.
-
-run_capture \
-    "gpu_lidar" \
-    "$PROF_DIR/worlds/gpu_lidar_sensor.sdf" \
-    "headless-rendering" \
-    "/lidar"
-
-run_capture \
-    "sensors_demo" \
-    "$PROF_DIR/worlds/sensors_demo.sdf" \
-    "headless-rendering" \
-    "/camera" "/depth_camera" "/rgbd_camera" "/thermal_camera" "/segmentation_camera" "/lidar"
+    COUNT=$((COUNT + 1))
+done
 
 # ---- Summary ----
 
 echo ""
 echo "============================================"
-echo "  All captures complete!"
+echo "  $COUNT worlds captured"
 echo "============================================"
-echo ""
-echo "Runtime flamegraphs:"
-ls -lh "$WS_DIR/profiling/captures/flamegraphs/runtime/"*.svg 2>/dev/null || echo "  (none)"
-echo ""
-echo "Loading flamegraphs:"
-ls -lh "$WS_DIR/profiling/captures/flamegraphs/loading/"*.svg 2>/dev/null || echo "  (none)"
-echo ""
-echo "Wall-clock loading times:"
-for f in "$WS_DIR/profiling/captures/flamegraphs/loading/"*_wallclock.txt; do
-    if [[ -f "$f" ]]; then
-        label=$(basename "$f" _wallclock.txt)
-        real_time=$(grep '^real' "$f" 2>/dev/null | awk '{print $2}' || echo "N/A")
-        printf "  %-30s %s\n" "$label" "$real_time"
-    fi
-done
