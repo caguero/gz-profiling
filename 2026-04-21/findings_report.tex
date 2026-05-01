@@ -1,0 +1,1484 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[11pt, a4paper]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\newenvironment{Shaded}{}{}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.49,0.56,0.16}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\BuiltInTok}[1]{\textcolor[rgb]{0.00,0.50,0.00}{#1}}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.53,0.00,0.00}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.56,0.13,0.00}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.73,0.13,0.13}{\textit{#1}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.02,0.16,0.49}{#1}}
+\newcommand{\ImportTok}[1]{\textcolor[rgb]{0.00,0.50,0.00}{\textbf{#1}}}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.40,0.40,0.40}{#1}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.74,0.48,0.00}{#1}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.73,0.40,0.53}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.10,0.09,0.49}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\usepackage{longtable,booktabs,array}
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\usepackage{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{3}
+\usepackage{palatino}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{}
+\fancyhead[C]{\small Gazebo Performance Profiling Report}
+\fancyhead[R]{}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\usepackage{titlesec}
+\titleformat{\section}{\Large\bfseries\color[rgb]{0.2,0.2,0.6}}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries\color[rgb]{0.3,0.3,0.5}}{\thesubsection}{1em}{}
+% Clickable flamegraph thumbnail
+% Usage: \flamethumb{thumb_file.png}{caption}{url}
+\newcommand{\flamethumb}[3]{%
+\begin{figure}[H]
+\centering
+\fbox{\href{#3}{\includegraphics[width=0.35\textwidth]{#1}}}\\[4pt]
+{\small\itshape #2}\\[1pt]
+{\footnotesize\href{#3}{Click to open interactive flamegraph}}
+\end{figure}
+}
+\usepackage{float}
+\floatplacement{figure}{H}
+\usepackage{geometry}
+\geometry{margin=0.6in}
+\usepackage{microtype}
+\emergencystretch=5em
+\setlength{\parskip}{0.5em}
+
+% Shrink monospace font to avoid code/paths overflowing margins
+\usepackage{fvextra}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\},fontsize=\small}
+
+% Force separate title page
+\usepackage{graphicx}
+\renewcommand{\maketitle}{
+  \begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\Huge\bfseries Gazebo Performance Profiling Report\par}
+    \vspace{1.5cm}
+    \includegraphics[width=0.3\textwidth]{figures/gazebo_logo.png}\par
+    \vspace{1.5cm}
+    {\Large Carlos Ag\"uero\par}
+    \vspace{0.3cm}
+    {\normalsize caguero@honurobotics.com\par}
+    \vspace{1cm}
+    {\large April 2026\par}
+    \vfill
+  \end{titlepage}
+}
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={Gazebo Performance Profiling Report},
+  pdfauthor={Carlos Ag\"uero},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{Gazebo Performance Profiling Report}
+\author{Open Source Robotics}
+\date{April 2026}
+
+\begin{document}
+\maketitle
+
+\tableofcontents
+\newpage
+
+\hypertarget{introduction}{%
+\section{Introduction}\label{introduction}}
+
+Gazebo is a widely used robotics simulator that integrates physics
+engines (DART, ODE), a 3D rendering pipeline (Ogre), sensor simulation,
+and an Entity Component System (ECS) into a single real-time loop. As
+simulation worlds grow in complexity --- more models, more sensors, more
+detailed meshes --- users frequently encounter real-time factor (RTF)
+degradation without clear visibility into what is consuming CPU time.
+
+Prior profiling efforts in Gazebo have relied on the built-in Remotery
+profiler, which instruments explicitly annotated code scopes via
+\texttt{GZ\_PROFILE} macros. While useful for understanding Gazebo's own
+subsystem timing, Remotery cannot see inside third-party libraries
+(DART, ODE, Ogre) or system-level costs (memory allocation, thread
+synchronization, dynamic linking). This leaves significant blind spots
+when diagnosing performance problems.
+
+This report introduces \textbf{CPU flamegraph profiling} as a
+complementary technique. Flamegraphs, generated from Linux \texttt{perf}
+sampling data, capture the full call stack across all libraries ---
+including DART's constraint solver, ODE's collision broadphase, Ogre's
+scene-graph traversal, and glibc's memory allocator. By combining
+flamegraphs with Remotery's structured scopes, we can attribute CPU time
+to specific subsystems and identify optimization targets with high
+confidence.
+
+\hypertarget{goals}{%
+\subsection{Goals}\label{goals}}
+
+\begin{itemize}
+\tightlist
+\item
+  Understand where CPU time goes across representative simulation
+  workloads, with emphasis on Gazebo-owned code rather than third-party
+  physics engines
+\item
+  Measure startup/loading time and identify bottlenecks in world
+  initialization
+\item
+  Identify concrete, actionable optimization opportunities within the
+  Gazebo codebase
+\item
+  Establish a reproducible profiling methodology and benchmark suite for
+  ongoing performance work
+\end{itemize}
+
+\hypertarget{approach}{%
+\subsection{Approach}\label{approach}}
+
+We selected 6 benchmark worlds covering distinct stress axes: entity
+count scaling (3000 shapes, static and dynamic variants), GPU lidar
+rendering, multi-sensor rendering, non-rendering sensors, and a
+realistic mixed-use scenario (jetty demo). Worlds were run at maximum
+speed (RTF=0) to saturate CPU and eliminate real-time pacing overhead.
+Both steady-state runtime and startup/loading captures were collected. A
+mix of static and dynamic worlds was used to separate Gazebo framework
+overhead from physics engine cost --- the static variant of 3k\_shapes
+(all models
+\texttt{\textless{}static\textgreater{}true\textless{}/static\textgreater{}})
+isolates ECS, transport, and scene management overhead by removing all
+DART/ODE work.
+
+The study follows two phases. The \textbf{discovery phase} uses CPU flamegraphs to identify where time goes across the full stack and prioritize optimization targets. The \textbf{validation phase} (Section~\ref{validating-optimizations}) defines a methodology for measuring the before/after impact of each optimization using \texttt{GZ\_PROFILE} (Remotery) instrumentation, which provides deterministic per-step timing for named code scopes.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{methodology-and-reproduction-procedure}{%
+\section{Methodology and Reproduction
+Procedure}\label{methodology-and-reproduction-procedure}}
+
+\hypertarget{profiling-techniques}{%
+\subsection{Profiling Techniques}\label{profiling-techniques}}
+
+This study uses two complementary profiling techniques to achieve
+full-stack visibility into Gazebo's CPU usage.
+
+\textbf{CPU Flamegraphs} are generated from Linux \texttt{perf} sampling
+data. The \texttt{perf} tool uses hardware performance counters to
+interrupt the running process at a fixed frequency (997 Hz in this
+study) and record the current call stack. These stack samples are then
+collapsed and rendered as an interactive SVG using Brendan Gregg's
+FlameGraph scripts {[}1{]}. In a flamegraph, the x-axis represents the
+proportion of total CPU samples (wider = more time), and the y-axis
+represents call stack depth (bottom = entry point, top = leaf function
+where time is actually spent). The resulting SVG is interactive:
+clicking any frame re-renders the chart with that frame as the new
+baseline, effectively zooming into that subtree. Flamegraphs capture
+\emph{every} function in the call stack, including third-party libraries
+(DART, ODE, Ogre), system libraries (glibc malloc, pthreads), and kernel
+calls --- making them ideal for identifying bottlenecks that span
+library boundaries.
+
+Two types of flamegraph captures were performed:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Runtime captures}: \texttt{perf} attaches to a running Gazebo
+  process and samples for 30 seconds during steady-state simulation.
+  This reveals where CPU goes during normal operation.
+\item
+  \textbf{Loading captures}: \texttt{perf} wraps the entire process
+  launch
+  (\texttt{perf\ record\ -\/-\ gz-sim-main\ -\/-iterations\ 1\ \textless{}world\textgreater{}}),
+  capturing startup, SDF parsing, physics engine initialization, and
+  scene construction. This reveals where loading time goes.
+\end{itemize}
+
+To produce readable flamegraphs, the code must be compiled with debug
+symbols (\texttt{-g} via \texttt{RelWithDebInfo}) so that \texttt{perf}
+can map instruction addresses to function names, and with frame pointers
+(\texttt{-fno-omit-frame-pointer}) so that \texttt{perf} can walk the
+call stack reliably. Without frame pointers, stack traces break and the
+flamegraph contains \texttt{{[}unknown{]}} frames. An alternative is
+\texttt{perf\ record\ -\/-call-graph\ dwarf}, which uses DWARF debug
+info for stack unwinding but produces 3-5x larger capture files.
+
+The sampling frequency of 997 Hz (rather than 1000 Hz) avoids lock-step
+aliasing with system timers that may fire at 1 kHz. The Linux
+\texttt{perf\_event\_paranoid} sysctl must be set to 1 or lower to allow
+user-mode CPU sampling.
+
+\textbf{GZ\_PROFILE (Remotery Profiler)} is Gazebo's built-in
+instrumentation system. Developers annotate code with
+\texttt{GZ\_PROFILE("scope\_name")} macros that record entry/exit
+timestamps and send them to a Remotery server. A browser-based
+visualizer connects via WebSocket and displays a real-time timeline of
+named scopes per thread. Unlike flamegraphs, Remotery shows only
+\emph{explicitly annotated} scopes --- it cannot see inside libraries
+that lack instrumentation. However, it provides structured, named timing
+data that is easy to interpret and correlate with specific Gazebo
+subsystems.
+
+The \texttt{GZ\_PROFILE} macros are compiled as no-ops unless
+\texttt{ENABLE\_PROFILER=ON} is passed at CMake time, ensuring zero
+overhead in production builds. Four Gazebo libraries support this flag:
+gz-sim, gz-physics, gz-rendering, and gz-sensors.
+
+For the discovery phase (flamegraph captures in this study), \texttt{ENABLE\_PROFILER=OFF} is recommended. This eliminates the \textasciitilde1.5\% overhead from \texttt{\_rmt\_BeginCPUSample} calls and produces cleaner flamegraphs without Remotery frames cluttering the stacks.
+
+For the validation phase (measuring before/after impact of specific optimizations), \texttt{ENABLE\_PROFILER=ON} should be used. This activates the Remotery scopes that provide per-step timing for each named code block, enabling precise comparison between baseline and optimized implementations. See Section~\ref{validating-optimizations} for the recommended validation workflow.
+
+\hypertarget{benchmark-world-selection}{%
+\subsection{Benchmark World
+Selection}\label{benchmark-world-selection}}
+
+Six benchmark worlds were selected to cover distinct stress axes. All
+worlds were modified to run at maximum speed
+(\texttt{\textless{}real\_time\_factor\textgreater{}0\textless{}/real\_time\_factor\textgreater{}})
+to saturate CPU and eliminate the real-time pacing overhead from the
+flamegraphs. A mix of static and dynamic worlds separates Gazebo
+framework overhead from physics engine cost:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Static worlds} (3k\_shapes\_static, sensors, jetty paused):
+  isolate ECS iteration, transport publishing, and rendering pipeline
+  cost by removing all DART/ODE physics work.
+\item
+  \textbf{Dynamic worlds} (3k\_shapes, jetty headless): show the full
+  picture including physics. Comparing dynamic 3k\_shapes with its
+  static variant reveals the pure physics engine cost.
+\item
+  \textbf{Rendering/sensor worlds} (gpu\_lidar, sensors\_demo): exercise
+  the Ogre rendering pipeline and sensor simulation. These require
+  \texttt{gz\ topic\ -e} subscribers to force the sensor system to
+  actually render and publish data --- without subscribers, the pipeline
+  skips rendering work entirely.
+\end{itemize}
+
+\hypertarget{hardware}{%
+\subsection{Hardware}\label{hardware}}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{CPU}: Intel Core Ultra 9 285HX, 24 cores (no HT), x86\_64
+\item
+  \textbf{GPU}: NVIDIA RTX PRO 3000 Blackwell Generation Laptop GPU
+\item
+  \textbf{NVIDIA Driver}: 580.126.09 (used for headless EGL rendering via Ogre2)
+\item
+  \textbf{Kernel}: 6.17.0-20-generic
+\item
+  \textbf{GCC}: 13.3.0
+\end{itemize}
+
+\hypertarget{software-versions}{%
+\subsection{Software Versions}\label{software-versions}}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{gz-sim}: 11.0.0-pre1 (workspace source build, main branch)
+\item
+  \textbf{gz-physics}: source build with 17 GZ\_PROFILE points added to
+  dartsim
+\item
+  \textbf{DART}: system-packaged libdart 6.13.2 (no debug symbols)
+\item
+  \textbf{perf}: 6.17.13
+\item
+  \textbf{FlameGraph}: Brendan Gregg's scripts at
+  \texttt{\textasciitilde{}/rotary\_ws/tools/FlameGraph/}
+\end{itemize}
+
+\hypertarget{build-command}{%
+\subsection{Build Command}\label{build-command}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\BuiltInTok{cd}\NormalTok{ \textasciitilde{}/rotary\_ws}
+\ExtensionTok{colcon}\NormalTok{ build }\AttributeTok{{-}{-}merge{-}install} \DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}cmake{-}args} \AttributeTok{{-}DENABLE\_PROFILER}\OperatorTok{=}\NormalTok{OFF }\DataTypeTok{\textbackslash{}}
+               \AttributeTok{{-}DCMAKE\_BUILD\_TYPE}\OperatorTok{=}\NormalTok{RelWithDebInfo }\DataTypeTok{\textbackslash{}}
+               \AttributeTok{{-}DCMAKE\_CXX\_FLAGS}\OperatorTok{=}\StringTok{"{-}fno{-}omit{-}frame{-}pointer"} \DataTypeTok{\textbackslash{}}
+               \AttributeTok{{-}DCMAKE\_C\_FLAGS}\OperatorTok{=}\StringTok{"{-}fno{-}omit{-}frame{-}pointer"}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{environment-setup}{%
+\subsection{Environment Setup}\label{environment-setup}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\BuiltInTok{source}\NormalTok{ \textasciitilde{}/rotary\_ws/install/setup.bash}
+\BuiltInTok{export} \VariableTok{GZ\_CONFIG\_PATH}\OperatorTok{=}\NormalTok{\textasciitilde{}/rotary\_ws/install/share/gz:}\VariableTok{$GZ\_CONFIG\_PATH}
+\BuiltInTok{export} \VariableTok{GZ\_SIM\_RESOURCE\_PATH}\OperatorTok{=}\NormalTok{\textasciitilde{}/jetty\_demo/jetty\_demo/models:}\VariableTok{$GZ\_SIM\_RESOURCE\_PATH}
+\FunctionTok{sudo}\NormalTok{ sysctl kernel.perf\_event\_paranoid=1}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{modified-world-sdfs}{%
+\subsection{Modified World SDFs}\label{modified-world-sdfs}}
+
+All benchmark worlds were copied to
+\texttt{\textasciitilde{}/rotary\_ws/profiling/worlds/} with the SDF tag
+\texttt{real\_time\_factor} set to \texttt{0}
+to saturate CPU (eliminate pacing overhead).
+\texttt{3k\_shapes\_static.sdf} additionally has
+the \texttt{static} tag set to \texttt{true}
+on all 3004 models.
+
+\hypertarget{runtime-capture-command-per-world}{%
+\subsection{Runtime Capture Command (per
+world)}\label{runtime-capture-command-per-world}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# Launch headless}
+\ExtensionTok{\textasciitilde{}/rotary\_ws/install/libexec/gz/sim/gz{-}sim{-}main} \AttributeTok{{-}s} \AttributeTok{{-}r} \OperatorTok{\textless{}}\NormalTok{world.sdf}\OperatorTok{\textgreater{}} \KeywordTok{\&}
+\VariableTok{PID}\OperatorTok{=}\VariableTok{$!}\KeywordTok{;} \FunctionTok{sleep}\NormalTok{ 5}
+
+\CommentTok{\# For sensor worlds: gz topic {-}e {-}t \textless{}topic\textgreater{} \textgreater{} /dev/null \&}
+
+\CommentTok{\# Record 30s at 997 Hz}
+\ExtensionTok{perf}\NormalTok{ record }\AttributeTok{{-}F}\NormalTok{ 997 }\AttributeTok{{-}{-}call{-}graph}\NormalTok{ fp }\AttributeTok{{-}p} \VariableTok{$PID} \AttributeTok{{-}o}\NormalTok{ perf.data sleep 30}
+\BuiltInTok{kill} \VariableTok{$PID}
+
+\CommentTok{\# Generate flamegraph}
+\ExtensionTok{perf}\NormalTok{ script }\AttributeTok{{-}i}\NormalTok{ perf.data }\KeywordTok{|} \ExtensionTok{stackcollapse{-}perf.pl} \KeywordTok{|} \ExtensionTok{flamegraph.pl} \OperatorTok{\textgreater{}}\NormalTok{ flamegraph.svg}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{loading-capture-command-per-world}{%
+\subsection{Loading Capture Command (per
+world)}\label{loading-capture-command-per-world}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{perf}\NormalTok{ record }\AttributeTok{{-}F}\NormalTok{ 997 }\AttributeTok{{-}{-}call{-}graph}\NormalTok{ fp }\AttributeTok{{-}o}\NormalTok{ perf\_loading.data }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}}\NormalTok{ gz{-}sim{-}main }\AttributeTok{{-}s} \AttributeTok{{-}r} \AttributeTok{{-}{-}iterations}\NormalTok{ 1 }\OperatorTok{\textless{}}\NormalTok{world.sdf}\OperatorTok{\textgreater{}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{Data Organization}
+
+All profiling data is stored under \texttt{\textasciitilde{}/rotary\_ws/profiling/} with the following structure:
+
+\begin{verbatim}
+profiling/
+  worlds/                          # Modified benchmark world SDFs
+    3k_shapes.sdf                  #   Dynamic variant (RTF=0)
+    3k_shapes_static.sdf           #   Static variant (RTF=0, all models static)
+    sensors.sdf                    #   Non-rendering sensors (RTF=0)
+    jetty.sdf                      #   Complex real-world scene (RTF=0)
+    gpu_lidar_sensor.sdf           #   GPU lidar (RTF=0)
+    sensors_demo.sdf               #   Multi-sensor rendering (RTF=0)
+  captures/
+    flamegraphs/
+      runtime/                     # Steady-state captures (30s each)
+        perf_<label>.data          #   Raw perf binary data
+        <label>.folded             #   Collapsed stacks (text)
+        <label>.svg                #   Interactive flamegraph
+      loading/                     # Startup captures (1 iteration)
+        perf_<label>_loading.data  #   Raw perf binary data
+        <label>_loading.folded     #   Collapsed stacks (text)
+        <label>_loading.svg        #   Interactive flamegraph
+        <label>_wallclock.txt      #   Wall-clock loading time
+    remotery/                      # Remotery screenshots (manual)
+  analysis/
+    findings_report.tex            # This report (LaTeX source)
+    findings_report.pdf            # This report (compiled)
+    findings_report.md             # Original markdown source
+    header.tex                     # LaTeX preamble/formatting
+    figures/                       # Flamegraph PNGs for the report
+  scripts/
+    gz_flamegraph.sh               # Runtime capture script
+    gz_loading_flamegraph.sh       # Loading capture script
+    capture_all.sh                 # Orchestrates all captures
+\end{verbatim}
+
+\textbf{File types:}
+\begin{itemize}
+\tightlist
+\item \texttt{perf\_*.data} --- raw binary capture from \texttt{perf record}. Contains all stack samples. Can be re-analyzed with \texttt{perf report} or \texttt{perf script}. Large files; can be deleted once \texttt{.folded} files are generated.
+\item \texttt{*.folded} --- collapsed stack traces in text format (one line per unique stack, with sample count). Input for \texttt{flamegraph.pl}. Also useful for CLI analysis with \texttt{awk}/\texttt{sort}.
+\item \texttt{*.svg} --- interactive flamegraph. Open in a web browser; click frames to zoom, Ctrl+F to search.
+\item \texttt{*\_wallclock.txt} --- wall-clock time for loading captures, recorded via the \texttt{time} command.
+\end{itemize}
+
+\subsection{Online Repository}
+
+All interactive flamegraphs, capture scripts, benchmark worlds, and the PDF report are published at:
+
+\begin{center}
+\url{https://github.com/caguero/gz-profiling-flamegraphs}
+\end{center}
+
+Interactive flamegraphs are served via GitHub Pages at:
+
+\begin{center}
+\url{https://caguero.github.io/gz-profiling-flamegraphs/}
+\end{center}
+
+The repository contains everything needed to reproduce the study:
+
+\begin{verbatim}
+gz-profiling-flamegraphs/
+  scripts/                    # Reusable capture automation
+    gz_flamegraph.sh          #   Runtime capture (30s steady-state)
+    gz_loading_flamegraph.sh  #   Loading/startup capture
+    capture_all.sh            #   Captures all worlds in a directory
+  worlds/                     # Benchmark world SDFs (all RTF=0)
+    3k_shapes.sdf             #   3000 dynamic entities
+    3k_shapes_static.sdf      #   3000 static entities
+    sensors.sdf               #   Non-rendering sensors
+    jetty.sdf                 #   Complex real-world scene
+    gpu_lidar_sensor.sdf      #   GPU lidar rendering
+    gpu_lidar_sensor.topics   #   Sensor topics for subscriber
+    sensors_demo.sdf          #   6 rendering sensors
+    sensors_demo.topics       #   Sensor topics for subscriber
+  2026-04-21/                 # This benchmark run
+    runtime/                  #   Interactive runtime flamegraph SVGs
+    loading/                  #   Interactive loading flamegraph SVGs
+    findings_report.pdf       #   This report
+    index.html                #   Per-run index with links
+  YYYY-MM-DD/                 # Future runs
+\end{verbatim}
+
+Flamegraph thumbnails in this report link to the corresponding interactive SVG on GitHub Pages. Click any thumbnail to open the full flamegraph in a browser with click-to-zoom, hover tooltips, and search functionality. The \texttt{?s=<regex>} URL parameter pre-highlights matching frames in magenta.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{loading-time-analysis}{%
+\section{Loading-Time Analysis}\label{loading-time-analysis}}
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2200}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.1000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.0800}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.6000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+World
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Wall-clock
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Samples
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Key observation
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+3k\_shapes\_static & \textbf{26.0s} & 25,962 & Dominated by entity
+creation \\
+3k\_shapes\_dynamic & \textbf{26.6s} & 26,545 & Nearly identical to
+static --- physics init is cheap \\
+jetty & \textbf{7.8s} & 7,718 & SdfModelSerializer::Serialize + plugin
+loading \\
+sensors\_nonrendering & 2.4s & 368 & Fast --- few entities \\
+gpu\_lidar & 0.06s & 5 & Trivial --- few entities, rendering initializes at runtime \\
+sensors\_demo & 0.03s & 5 & Trivial --- few entities, rendering initializes at runtime \\
+\end{longtable}
+
+\def\BASEURL{https://caguero.github.io/gz-profiling-flamegraphs/2026-04-21}
+
+\subsection{Loading Flamegraphs}
+
+Click any thumbnail to open the full interactive flamegraph in a browser (supports click-to-zoom, hover tooltips, and Ctrl+F search).
+
+\begin{center}
+\begin{tabular}{p{3.5cm}cc}
+\toprule
+World & Wall-clock & Flamegraph \\
+\midrule
+3k\_shapes\_static & 26.0s & \href{\BASEURL/loading/3k_shapes_static_loading.svg?s=SceneGraphAddEntities|DownloadAssets}{\includegraphics[width=3.5cm,height=2cm,keepaspectratio]{figures/thumb_3k_shapes_static_loading.png}} \\[6pt]
+3k\_shapes\_dynamic & 26.6s & \href{\BASEURL/loading/3k_shapes_dynamic_loading.svg?s=SceneGraphAddEntities|DownloadAssets}{\includegraphics[width=3.5cm,height=2cm,keepaspectratio]{figures/thumb_3k_shapes_static_loading.png}} \\[6pt]
+jetty & 7.8s & \href{\BASEURL/loading/jetty_loading.svg?s=SdfModelSerializer|DownloadAssets}{\includegraphics[width=3.5cm,height=2cm,keepaspectratio]{figures/thumb_jetty_loading.png}} \\[6pt]
+sensors\_nonrendering & 2.4s & \multicolumn{1}{l}{\small\itshape Fast --- few entities, no significant loading cost} \\[6pt]
+gpu\_lidar & 0.06s & \multicolumn{1}{l}{\small\itshape Loads instantly --- few entities} \\[6pt]
+sensors\_demo & 0.03s & \multicolumn{1}{l}{\small\itshape Loads instantly --- few entities} \\[6pt]
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Key Loading-Time Findings}
+
+\subsubsection*{3k\_shapes (26s)}
+
+Loading flamegraph shows
+\texttt{SceneBroadcasterPrivate::\ SceneGraphAddEntities} as a top
+self-time leaf (3\% of loading in static variant). The loading time is
+dominated by constructing 3000 ECS entities and DART skeletons. Static
+vs dynamic loading time is nearly identical (26.0 vs 26.6s), confirming
+that DART skeleton construction cost is per-entity, not
+per-dynamic-entity.
+
+\begin{description}[style=nextline, leftmargin=1.5cm]
+\item[\texttt{SceneGraphAddEntities}] (gz-sim, SceneBroadcaster.cc) Constructs a directed acyclic graph tracking parent-child relationships for new entities and serializes their pose and component data into protobuf messages for transport publication. Scales linearly with entity count.
+\item[\texttt{DownloadAssets}] (gz-sim, ServerPrivate.cc) Despite no remote assets in any benchmark world, this function consumes a significant fraction of every world's loading time. The SDF file is parsed \textbf{twice} during startup by design:
+
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+World & \% of loading & Estimated time \\
+\midrule
+sensors\_nonrendering & 29.9\% & 0.7s \\
+jetty & 13.9\% & 1.0s \\
+3k\_shapes\_static & 9.1\% & 2.3s \\
+3k\_shapes\_dynamic & 8.3\% & 2.2s \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{enumerate}
+\item \textbf{First parse} (Server.cc:93): \texttt{LoadSdfRootHelper} parses the full SDF quickly (1.3\%, barely visible in the flamegraph). The server then \textbf{intentionally strips all models, actors, and lights} from the result (Server.cc:104--108, \texttt{ClearModels/ClearActors/ClearLights}) and creates simulation runners with an empty world shell. This allows the GUI to start immediately without waiting for asset downloads.
+\item \textbf{Second parse} (ServerPrivate.cc:787, inside \texttt{DownloadAssets}): \texttt{LoadSdfRootHelper} is called \textbf{again} on a background thread, this time fully resolving all model references via \texttt{Root::Load → readFile → init → initDoc → initXml} (deeply recursive). After parsing, the complete world (now including any freshly downloaded Fuel models) is injected back into the runner via \texttt{SetWorldSdf} (line 840), and \texttt{SetCreateEntities} (line 844) triggers entity creation. This second parse is visible in the flamegraph of \textbf{every world} --- not just 3k\_shapes.
+\end{enumerate}
+
+The architecture is intentional: parse once for fast GUI startup, parse again in the background to get the full models. However, for worlds without Fuel URIs (all benchmark worlds tested), the first parse already has all the models --- they are discarded and then re-parsed for no reason, costing 0.7--2.3 seconds per startup. The optimization: when no Fuel URIs are queued, skip the second parse and keep the models from the first parse instead of discarding them. Additionally, \texttt{FetchQueuedAssets} creates a local \texttt{WorkerPool(2)}, spawning 2 threads for an empty download queue --- also skippable.
+\end{description}
+
+\subsubsection*{jetty (7.8s)}
+
+The bottleneck is
+\texttt{SdfModelSerializer::Serialize}, called from
+\texttt{SceneBroadcaster::PostUpdate\ →\ EntityComponentManager::AddEntityToMessage}.
+This serializer converts every model's SDF representation back to a
+string via recursive \texttt{Element::ToString\ →\ PrintValuesImpl}
+calls. The recursive depth (3-5 levels of \texttt{ToString}, 2-5 levels
+of \texttt{PrintValuesImpl}) amplifies the cost for complex models.
+
+\begin{description}[style=nextline, leftmargin=1.5cm]
+\item[\texttt{SdfModelSerializer::Serialize}] (gz-sim, EntityComponentManager.cc) Called only once --- on the first simulation step when all entities are new. The call path is: \texttt{SceneBroadcaster::PostUpdate} checks \texttt{HasNewEntities()}, which triggers \texttt{ChangedState()} → iterates over all \texttt{newlyCreatedEntities} → calls \texttt{AddEntityToMessage()} for each → invokes \texttt{SdfModelSerializer::Serialize} which recursively converts the SDF to string via \texttt{Element::ToString → PrintValuesImpl}. On subsequent steps, \texttt{HasNewEntities()} is false so this code path is never reached again. The cost is a one-time per-loading spike, but for complex models with deeply nested SDF elements, it dominates the first step.
+\item[\texttt{do\_lookup\_x}] (glibc dynamic linker, 4.8\%) Resolves symbol references when shared library plugins are loaded. Each plugin triggers symbol relocation across all loaded libraries. Appears in top-10 for every world (2-9\%).
+\item[\texttt{DownloadAssets}] (gz-sim, ServerPrivate.cc, 13.9\% in jetty) Same redundant second SDF parse as described under 3k\_shapes above. In jetty, this costs \textasciitilde 1.0s of the 7.8s loading time --- the SDF is re-parsed on a background thread despite no Fuel URIs being present.
+\end{description}
+
+\subsubsection*{Common observations}
+
+\texttt{do\_lookup\_x} (dynamic linker) appears in top-10 for every loading capture (2-9\%).
+
+\begin{description}[style=nextline, leftmargin=1.5cm]
+\item[\texttt{pybind11::initialize\_interpreter}] (gz-sim, Server.cc) The Python interpreter is initialized \textbf{unconditionally} at server construction (\texttt{Server::Server → pybind11::initialize\_interpreter → Py\_InitializeFromConfig}), even when no Python system plugins are referenced in the world file. None of the benchmark worlds use Python plugins, yet every loading capture pays a fixed \textasciitilde 200--260ms cost for interpreter initialization and module imports:
+
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+World & \% of loading & Estimated time \\
+\midrule
+sensors\_nonrendering & 7.5\% & 180ms \\
+jetty & 3.3\% & 257ms \\
+3k\_shapes\_static & 1.0\% & 260ms \\
+3k\_shapes\_dynamic & 0.9\% & 239ms \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The fix: lazy-initialize the Python interpreter only when a \texttt{python\_system\_loader} plugin is actually requested by the world.
+\end{description}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{runtime-analysis-per-world}{%
+\section{Runtime Analysis Per
+World}\label{runtime-analysis-per-world}}
+
+All runtime captures were recorded for 30 seconds at 997 Hz with the real-time factor target set to 0 (run as fast as possible). The measured RTF column shows the actual achieved performance.
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2200}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.1200}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.0800}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.5800}}@{}}
+\toprule\noalign{}
+World & Measured RTF & Samples & Key observation \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+3k\_shapes\_static & 0.04 & 557K & Hashtable 26.8\%, ODE broadphase 3.8\% despite static \\
+3k\_shapes\_dynamic & 0.01 & 611K & EachNoCache 10.8\% + unresolved DART 18.3\% \\
+sensors\_nonrendering & 1.94 & 603K & Thread sync overhead 4\% (Barrier::Wait, pthread) \\
+jetty\_headless & 0.11 & 578K & Collision 21.9\% + JPEG texture decode 6\% \\
+gpu\_lidar & 1.44 & 868K & NVIDIA EGL driver 6.9\%, Ogre2 culling 3\% \\
+sensors\_demo & 1.34 & 691K & Ogre2 scene-graph traversal 22\% \\
+\end{longtable}
+
+\subsection{Runtime Flamegraphs}
+
+Click any thumbnail to open the full interactive flamegraph in a browser (supports click-to-zoom, hover tooltips, and Ctrl+F search).
+
+\begin{center}
+\begin{tabular}{p{3.5cm}p{4cm}c}
+\toprule
+World & Stress Axis & Flamegraph \\
+\midrule
+3k\_shapes\_static & 3000 static entities & \href{\BASEURL/runtime/3k_shapes_static.svg?s=SimulationFeatures::Write|ProcessRecreateEntities|WorldForwardStep}{\includegraphics[width=3.5cm,height=2cm,keepaspectratio]{figures/thumb_3k_shapes_static.png}} \\[6pt]
+3k\_shapes\_dynamic & 3000 dynamic entities & \href{\BASEURL/runtime/3k_shapes_dynamic.svg?s=SimulationFeatures::Write|ProcessRecreateEntities|WorldForwardStep}{\includegraphics[width=3.5cm,height=2cm,keepaspectratio]{figures/thumb_3k_shapes_dynamic.png}} \\[6pt]
+sensors\_nonrendering & IMU, mag, etc. & \href{\BASEURL/runtime/sensors_nonrendering.svg?s=ProcessRecreateEntities|Barrier|BaseView}{\includegraphics[width=3.5cm,height=2cm,keepaspectratio]{figures/thumb_sensors_nonrendering.png}} \\[6pt]
+jetty\_headless & Complex real-world scene & \href{\BASEURL/runtime/jetty_headless.svg?s=ProcessRecreateEntities|Image::RGBAData|BitmaskContact|SetTextureMapData}{\includegraphics[width=3.5cm,height=2cm,keepaspectratio]{figures/thumb_jetty_headless.png}} \\[6pt]
+gpu\_lidar & GPU lidar rendering & \href{\BASEURL/runtime/gpu_lidar.svg?s=ProcessRecreateEntities|BaseView|Barrier}{\includegraphics[width=3.5cm,height=2cm,keepaspectratio]{figures/thumb_gpu_lidar.png}} \\[6pt]
+sensors\_demo & 6 rendering sensors & \href{\BASEURL/runtime/sensors_demo.svg?s=ProcessRecreateEntities|BaseView|Barrier}{\includegraphics[width=3.5cm,height=2cm,keepaspectratio]{figures/thumb_sensors_demo.png}} \\[6pt]
+\bottomrule
+\end{tabular}
+\end{center}
+
+\hypertarget{k_shapes_static-3000-static-entities-headless-rtf0}{%
+\subsection{3k\_shapes\_static (3000 static entities, headless,
+RTF=0)}\label{k_shapes_static-3000-static-entities-headless-rtf0}}
+
+\textbf{Purpose}: Isolate Gazebo framework overhead with zero physics
+work.
+
+Bold rows are Gazebo-owned (actionable). Non-bold rows are external libraries (context).
+
+\begin{longtable}[]{@{}lrl@{}}
+\toprule\noalign{}
+Leaf function & \% & Category \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\textbf{\texttt{std::\_Hashtable} (Write)} & \textbf{26.8} & \textbf{gz-physics: pose map rebuild} \\
+\textbf{\texttt{Graph::Vertices} (EachNoCache)} & \textbf{13.5} & \textbf{gz-sim: full entity scan} \\
+\texttt{std::\_Rb\_tree\_increment} & 7.7 & ordered map/set iteration \\
+\textbf{\texttt{WorldForwardStep}} & \textbf{4.3} & \textbf{gz-physics: per-link loop} \\
+\texttt{Frame::getWorldTransform} & 4.4 & DART kinematic chain traversal \\
+\texttt{dxHashSpace::collide} & 3.8 & ODE broadphase on static geometry \\
+\texttt{DegreeOfFreedom::getPosition} & 3.6 & DART joint accessor \\
+\texttt{Skeleton::getDof} & 2.5 & DART skeleton accessor \\
+\texttt{CollisionGroup::updateSkeletonSource} & 2.5 & DART collision prep \\
+\end{longtable}
+
+\textbf{Key finding}: The dominant cost is \texttt{std::\_Hashtable} operations at 26.8\%. A DWARF-unwound recapture reveals the caller: \texttt{SimulationFeatures::Write(ChangedWorldPoses)} (gz-physics, SimulationFeatures.cc:176--214). Every simulation step, this function:
+
+\begin{enumerate}
+\item Creates a \textbf{fresh} \texttt{unordered\_map<size\_t, Pose3d> newPoses} (line 183)
+\item Iterates all 3000 links, inserting each pose into \texttt{newPoses[id]} --- even when the pose hasn't changed (line 206)
+\item Replaces the previous map: \texttt{prevLinkPoses = std::move(newPoses)} (line 213)
+\end{enumerate}
+
+With 3000 static entities where nothing ever moves, every step still allocates a new 3000-entry map, inserts 3000 entries (triggering multiple \texttt{\_M\_rehash} calls as the map grows), then destroys the old map. This allocate-populate-destroy cycle is the source of the 26.8\%.
+
+\textbf{Fix}: Pre-size \texttt{newPoses} with \texttt{reserve(this->links.size())} to eliminate rehashing. Better yet, reuse \texttt{prevLinkPoses} in place --- update entries that changed, remove entries for deleted links --- instead of rebuilding the map from scratch every step.
+
+A second major cost is \texttt{Graph::Vertices()} at 13.5\%, called from \texttt{SimulationRunner::ProcessRecreateEntitiesRemove} (SimulationRunner.cc:1510). This function uses \texttt{EachNoCache<Model, Recreate>} which iterates over \textbf{all 3000 entities} via \texttt{Entities().Vertices()} (EntityComponentManager.hh:310), checking each one for \texttt{Recreate} components. In a static world with nothing to recreate, it scans 3000 vertices every step to find zero matches. The ECS header itself notes: \emph{``The cached version, Each(), is preferred.''} --- but \texttt{ProcessRecreateEntitiesRemove} uses the uncached variant.
+
+\textbf{Fix}: Switch to the cached \texttt{Each<Model, Recreate>()}, or add an early-return when no \texttt{Recreate} components exist (e.g., check \texttt{HasComponentType<Recreate>} before iterating).
+
+ODE broadphase collision also runs every step at 3.8\% despite all models being static. DART accessors (\texttt{getWorldTransform} 4.4\%, \texttt{getPosition} 3.6\%) are called per-entity per-step.
+
+
+\begin{description}[style=nextline, leftmargin=1.5cm]
+\item[\texttt{WorldForwardStep}] (gz-physics, SimulationFeatures.cc) Main simulation entry point that orchestrates pre-step gravity, the DART world step, NaN checking, and pose output to the ECS. The 3.1\% self-time is the per-link iteration over 3000 links.
+\item[\texttt{dxHashSpace::collide}] (ODE) Broad-phase collision detection using spatial hashing. Sweeps all shapes in the hash space to find potentially overlapping pairs --- including static-vs-static pairs that can never produce contacts.
+\item[\texttt{DegreeOfFreedom::getPosition}] (DART) Returns the current generalized coordinate of a joint DOF. Called per-DOF per-step during skeleton state queries.
+\item[\texttt{std::\_Hashtable} (26.8\%)] (gz-physics, SimulationFeatures.cc:176--214) Operations on \texttt{unordered\_map<size\_t, Pose3d>} inside \texttt{Write(ChangedWorldPoses)}. A fresh map is allocated every step, 3000 entries inserted (with rehashing), then the old map is destroyed. The allocate-populate-destroy cycle dominates even though no poses change in a static world.
+\item[\texttt{Graph::Vertices} (13.5\%)] (gz-sim, EntityComponentManager.hh:310) Called from \texttt{ProcessRecreateEntitiesRemove} every step via \texttt{EachNoCache<Model, Recreate>}. Returns the entire scene graph vertex map (3000 entries), which is then scanned linearly to find entities with \texttt{Recreate} components. Zero matches in a static world --- pure overhead. The cached \texttt{Each()} variant avoids this full scan.
+\item[\texttt{Frame::getWorldTransform}] (DART) Computes world-space transform by traversing up the kinematic chain and accumulating parent transforms. Called per-link per-step inside \texttt{Write(ChangedWorldPoses)}.
+\end{description}
+
+\hypertarget{k_shapes_dynamic-3000-dynamic-entities-headless-rtf0}{%
+\subsection{3k\_shapes\_dynamic (3000 dynamic entities, headless,
+RTF=0)}\label{k_shapes_dynamic-3000-dynamic-entities-headless-rtf0}}
+
+\textbf{Purpose}: Full physics with 3000 bodies. Compare with static
+variant.
+
+\begin{longtable}[]{@{}lrl@{}}
+\toprule\noalign{}
+Leaf function & \% & Category \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{{[}libdart.so.6.13.2{]}} unresolved & 18.3 & DART (stripped) \\
+\textbf{\texttt{ProcessRecreateEntities}} & \textbf{10.8} & \textbf{gz-sim: EachNoCache full scan} \\
+\textbf{\texttt{std::\_Hashtable} (Write)} & \textbf{7.5} & \textbf{gz-physics: pose map rebuild} \\
+\texttt{BodyNode::isReactive} & 4.2 & DART accessor \\
+\texttt{BoxedLcpConstraintSolver} & 3.5 & DART LCP solver \\
+\texttt{BodyNode::getSkeleton} & 3.3 & DART accessor \\
+\texttt{buildConstrainedGroups} & 3.0 & DART constraint setup \\
+\end{longtable}
+
+\textbf{Static→dynamic delta}: LCP solver appears (3.5\%),
+\texttt{buildConstrainedGroups} appears (3.0\%),
+\texttt{BodyNode::isReactive} appears (4.2\%). The unresolved
+\texttt{libdart} bucket grows from 0\% to 18.3\%. \texttt{std::\_Hashtable} drops from 26.8\% to 7.5\% as physics work dilutes the ECS overhead. The physics engine cost is the dominant factor with dynamic bodies.
+
+Note that \texttt{WorldForwardStep} does not appear in the self-time table above, despite accounting for 55.8\% of total time \emph{inclusive}. In the static world, \texttt{WorldForwardStep} shows 3.1\% self-time because its per-link loops (added-mass gravity, pose output) iterate over 3000 links and the loop overhead itself is measurable. In the dynamic world, the same loops still run, but DART's solver and collision detection dominate so heavily that the loop overhead rounds to 0\% self-time --- all time is attributed to its children. The flamegraph tables report self-time only, so \texttt{WorldForwardStep} disappears from the dynamic table even though it is the parent of all physics work.
+
+\begin{description}[style=nextline, leftmargin=1.5cm]
+\item[\texttt{BodyNode::getSkeleton}] (DART) Returns a pointer to the skeleton that owns a body node. A simple accessor, but called per-body in the inner solver loop for every contact constraint --- hence 4.5\% with 3000 dynamic bodies.
+\item[\texttt{BoxedLcpConstraintSolver}] (DART) Solves contact constraints using a Linear Complementarity Problem (LCP) formulation. Determines contact forces to prevent interpenetration. Cost scales with the number of active contacts.
+\item[\texttt{buildConstrainedGroups}] (DART) Partitions contacts into constraint islands (connected components of interacting bodies) to reduce the LCP problem size. Each island is solved independently.
+\end{description}
+
+\hypertarget{sensors_nonrendering-imu-mag-etc.-headless-rtf0}{%
+\subsection{sensors\_nonrendering (IMU, mag, etc., headless,
+RTF=0)}\label{sensors_nonrendering-imu-mag-etc.-headless-rtf0}}
+
+\begin{longtable}[]{@{}lrl@{}}
+\toprule\noalign{}
+Leaf function & \% & Category \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{{[}unknown{]}} & 34.6 & kernel/stripped libs \\
+\texttt{{[}libdart.so.6.13.2{]}} & 5.4 & DART \\
+\texttt{{[}{[}vdso{]}{]}} & 2.5 & timing \\
+\texttt{BodyNode::getSkeleton} & 1.8 & DART \\
+\texttt{pthread\_cond\_wait} & 1.8 & thread sync (glibc) \\
+\texttt{\_rmt\_BeginCPUSample} & 1.5 & Remotery overhead \\
+\texttt{pthread\_mutex\_lock} & 1.1 & thread sync (glibc) \\
+\textbf{\texttt{Barrier::Wait}} & \textbf{1.0} & \textbf{gz-sim: thread barrier} \\
+\textbf{\texttt{BaseView::ResetNewEntityState}} & \textbf{0.8} & \textbf{gz-sim: ECS view reset} \\
+\end{longtable}
+
+\textbf{Key finding}: Thread synchronization
+(\texttt{pthread\_cond\_wait} + \texttt{pthread\_mutex\_lock} +
+\texttt{Barrier::Wait}) totals \textasciitilde4\%. ECS view operations
+(\texttt{BaseView::ResetNewEntityState}) visible. This is framework
+overhead --- not physics, not rendering.
+
+\begin{description}[style=nextline, leftmargin=1.5cm]
+\item[\texttt{Barrier::Wait}] (gz-sim, Barrier.hh) Thread synchronization barrier that blocks worker threads until all have reached the synchronization point, then releases them together. Used to coordinate PreUpdate/Update/PostUpdate system execution phases.
+\item[\texttt{pthread\_cond\_wait}] (glibc) Underlying POSIX condition variable wait used by \texttt{Barrier::Wait} and other synchronization primitives. The thread sleeps until signaled.
+\item[\texttt{BaseView::ResetNewEntityState}] (gz-sim, detail/BaseView.hh) Clears the ``new entity'' flag on all cached entities in an ECS view at the start of each step. Allows systems to distinguish newly created entities from existing ones. Cost scales with view size.
+\end{description}
+
+\hypertarget{jetty_headless-complex-world-headless-rtf0}{%
+\subsection{jetty\_headless (complex world, headless,
+RTF=0)}\label{jetty_headless-complex-world-headless-rtf0}}
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3000}}
+  >{\raggedleft\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.4000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Leaf function
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
+\%
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Category
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{dxHashSpace::collide} & 21.9 & ODE broadphase \\
+\textbf{\texttt{ProcessRecreateEntities}} & \textbf{15.2} & \textbf{gz-sim: EachNoCache full scan} \\
+\texttt{{[}unknown{]}} & 10.7 & kernel/stripped \\
+\textbf{\texttt{stbi\_\_YCbCr\_to\_RGB\_simd}} & \textbf{3.1} & \textbf{gz-common: JPEG decode} \\
+\texttt{Frame::getWorldTransform} & 1.8 & DART \\
+\textbf{\texttt{stbi\_\_jpeg\_decode\_block}} & \textbf{1.6} & \textbf{gz-common: JPEG decode} \\
+\texttt{{[}libdart.so.6.13.2{]}} & 1.5 & DART \\
+\textbf{\texttt{BitmaskContactFilter}} & \textbf{1.5} & \textbf{gz-physics: collision filter} \\
+\textbf{\texttt{updateEngineData}} & \textbf{1.2} & \textbf{gz-physics: DART→ODE sync} \\
+\textbf{\texttt{stbi\_\_convert\_format}} & \textbf{1.2} & \textbf{gz-common: image format} \\
+\textbf{\texttt{gz::common::Image::Width}} & \textbf{0.9} & \textbf{gz-common: image query} \\
+\end{longtable}
+
+\textbf{Key finding}: JPEG texture decoding (\texttt{stbi\_*} functions)
+consumes \textasciitilde6\% of CPU during headless runtime. The full
+call path reveals this happens inside
+\texttt{SceneManager::CreateVisual} --- visuals are created lazily
+during simulation on the render thread, not at startup. Each new visual
+triggers
+\texttt{Ogre2Material::SetTextureMapDataImpl\ →\ gz::common::Image::RGBAData\ →\ stbi\_*}
+to decode all material textures from JPEG. \texttt{BitmaskContactFilter}
+and \texttt{OdeCollisionObject::updateEngineData} are Gazebo-owned at
+1.5\% and 1.2\%.
+
+\begin{description}[style=nextline, leftmargin=1.5cm]
+\item[\texttt{dxHashSpace::collide}] (ODE) Broad-phase collision using spatial hashing. At 21.9\%, it dominates jetty due to the large number of collision shapes in the marina environment.
+\item[\texttt{stbi\_\_YCbCr\_to\_RGB\_simd}] (stb\_image, in gz-common) SIMD-accelerated JPEG color-space conversion from YCbCr to RGB. Called during lazy texture decoding when \texttt{SceneManager::CreateVisual} loads material textures on the render thread.
+\item[\texttt{stbi\_\_jpeg\_decode\_block}] (stb\_image) Reconstructs an 8$\times$8 JPEG image block via inverse DCT. Works in tandem with the color-space converter above.
+\item[\texttt{BitmaskContactFilter::ignoresCollision}] (gz-physics, EntityManagementFeatures.cc) Checks whether two collision shapes should be filtered based on user-defined bitmask values. Called once per broad-phase pair before narrow-phase testing.
+\item[\texttt{OdeCollisionObject::updateEngineData}] (DART/gz-physics) Synchronizes DART skeleton pose state to ODE collision object wrappers. Called per collision object per step, even when the object hasn't moved.
+\end{description}
+
+\hypertarget{gpu_lidar-gpu-lidar-headless-rendering-rtf0}{%
+\subsection{gpu\_lidar (GPU lidar, headless-rendering,
+RTF=0)}\label{gpu_lidar-gpu-lidar-headless-rendering-rtf0}}
+
+\begin{longtable}[]{@{}lrl@{}}
+\toprule\noalign{}
+Leaf function & \% & Category \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{{[}unknown{]}} & 21.4 & kernel/stripped \\
+\texttt{{[}{[}vdso{]}{]}} & 7.2 & timing/GPU sync \\
+\texttt{{[}libnvidia-eglcore{]}} & 6.9 & NVIDIA driver \\
+\texttt{{[}libdart.so.6.13.2{]}} & 6.4 & DART \\
+\texttt{BodyNode::getSkeleton} & 4.5 & DART \\
+\texttt{BoxedLcpConstraintSolver} & 4.1 & DART solver \\
+\texttt{Ogre::MovableObject::cullFrustum} & 1.2 & Ogre2 culling \\
+\texttt{Ogre::SceneManager::cullFrustum} & 1.0 & Ogre2 culling \\
+\textbf{\texttt{BaseView::ResetNewEntityState}} & \textbf{0.9} & \textbf{gz-sim: ECS view reset} \\
+\texttt{Ogre::SceneManager::updateAllLodsThread} & 0.8 & Ogre2 LOD \\
+\end{longtable}
+
+\textbf{Key finding}: NVIDIA EGL driver at 6.9\% --- GPU driver overhead
+for headless rendering. Ogre2 frustum culling and LOD updates visible
+but small (\textasciitilde3\% combined). Physics still dominates despite
+lidar being the target.
+
+\begin{description}[style=nextline, leftmargin=1.5cm]
+\item[\texttt{libnvidia-eglcore}] (NVIDIA driver) GPU driver overhead for EGL-based headless rendering. Handles GPU command submission, buffer management, and synchronization without an X server.
+\item[\texttt{Ogre::MovableObject::cullFrustum}] (Ogre2) Tests whether a renderable object intersects the camera frustum. Called per-object per-camera to determine visibility.
+\item[\texttt{Ogre::SceneManager::updateAllLodsThread}] (Ogre2) Updates level-of-detail selection for all objects based on distance to camera. Runs on a worker thread.
+\end{description}
+
+\hypertarget{sensors_demo-6-rendering-sensors-headless-rendering-rtf0}{%
+\subsection{sensors\_demo (6 rendering sensors,
+headless-rendering,
+RTF=0)}\label{sensors_demo-6-rendering-sensors-headless-rendering-rtf0}}
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3000}}
+  >{\raggedleft\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.4000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Leaf function
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
+\%
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Category
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{{[}unknown{]}} & 19.6 & kernel/stripped \\
+\texttt{Ogre::Node::\_getDerivedPosition} & 8.0 & Ogre2 scene
+graph \\
+\texttt{{[}libnvidia-eglcore{]}} & 5.6 & NVIDIA driver \\
+\texttt{Ogre::Node::\_getDerivedOrientationUpdated} & 5.5 &
+Ogre2 scene graph \\
+\texttt{{[}libdart.so.6.13.2{]}} & 4.6 & DART \\
+\texttt{{[}{[}vdso{]}{]}} & 4.1 & timing \\
+\texttt{Ogre::Node::updateFromParentImpl} & 2.9 & Ogre2 scene
+graph \\
+\texttt{Ogre::Frustum::updateWorldSpaceCornersImpl} & 2.6 &
+Ogre2 \\
+\texttt{Ogre::RenderSystem::\_makeRsProjectionMatrix} & 2.4 &
+Ogre2 \\
+\texttt{Ogre::SceneManager::cullFrustum} & 1.5 & Ogre2 \\
+\end{longtable}
+
+\textbf{Key finding}: Ogre2 scene-graph transform traversal totals
+\textasciitilde22\% (\texttt{\_getDerivedPosition} +
+\texttt{\_getDerivedOrientationUpdated} + \texttt{updateFromParentImpl}
++ frustum updates). This is the dominant cost for multi-sensor rendering
+--- not shader execution, not GPU submission, but CPU-side scene-graph
+walking. NVIDIA driver at 5.6\%.
+
+\begin{description}[style=nextline, leftmargin=1.5cm]
+\item[\texttt{Ogre::Node::\_getDerivedPosition}] (Ogre2) Computes world-space position of a scene node by traversing up the parent chain. Called per-node per-camera --- with 6 cameras, each node is queried 6 times per frame.
+\item[\texttt{Ogre::Node::\_getDerivedOrientationUpdated}] (Ogre2) Computes world-space orientation of a scene node, re-deriving from parent if the dirty flag is set. Companion to \texttt{\_getDerivedPosition}.
+\item[\texttt{Ogre::Node::updateFromParentImpl}] (Ogre2) Propagates parent transform changes down to child nodes. Recursive tree traversal that updates local-to-world matrices when any ancestor moves.
+\item[\texttt{Ogre::Frustum::updateWorldSpaceCornersImpl}] (Ogre2) Computes the 8 frustum corner points in world-space for each camera. Used for visibility culling and shadow map computation.
+\item[\texttt{Ogre::ForwardClustered::collectLightForSlice}] (Ogre2) Assigns lights to screen-space tiles for Ogre2's forward+ rendering pipeline. Reduces per-pixel light iteration cost by pre-sorting lights into spatial clusters.
+\end{description}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{cross-reference-analysis}{%
+\section{Cross-Reference
+Analysis}\label{cross-reference-analysis}}
+
+\subsection{Gazebo-Owned Hotspots (optimization targets)}
+
+The following hotspots are in code maintained by the Gazebo project. These are the primary targets for optimization effort.
+
+{\footnotesize
+\begin{longtable}[]{@{}lll>{\raggedright\arraybackslash}p{\dimexpr\textwidth-10.5cm}@{}}
+\toprule
+Function & Where & \% & Actionable fix \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+\texttt{ProcessRecreateEntitiesRemove} & all worlds & 1.7--45 & Switch to cached \texttt{Each()} or early-return \\
+\texttt{Write(ChangedWorldPoses)} & 3k\_static & 26.8 & Reuse pose map in place instead of rebuild \\
+\texttt{DownloadAssets} & all loading & 9--30 & Skip second parse when no Fuel URIs \\
+\texttt{stbi\_*} JPEG decode & jetty & 6 & Cache decoded textures \\
+\texttt{pybind11::initialize\_interpreter} & all loading & 1--7.5 & Lazy-init Python only when needed \\
+\texttt{BitmaskContactFilter} & jetty & 1.5 & Inline bitmask check \\
+\texttt{updateEngineData} & jetty & 1.2 & Dirty-flag to skip unchanged objects \\
+\texttt{Barrier::Wait} & sensors & 1--1.8 & Investigate lock-free barriers \\
+\texttt{BaseView::ResetNewEntityState} & sensors & 0.5--0.9 & Skip when no entities changed \\
+\texttt{SdfModelSerializer} & all loading & 1st step & Lazy serialization or binary format \\
+\texttt{SceneGraphAddEntities} & 3k loading & 3 load & Batch entity insertion \\
+\end{longtable}
+}
+
+\clearpage
+\subsection{External Library Costs (context, not directly actionable)}
+
+The following hotspots are in third-party libraries (DART, ODE, Ogre, NVIDIA driver, glibc). They cannot be optimized directly in the Gazebo codebase but provide context for understanding CPU distribution. In some cases, Gazebo can reduce how often these are called (e.g., skip broadphase for static bodies).
+
+{\footnotesize
+\begin{longtable}[]{@{}lll>{\raggedright\arraybackslash}p{\dimexpr\textwidth-9.5cm}@{}}
+\toprule
+Function & Library & \% & Context \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+\texttt{dxHashSpace::collide} & ODE & 3.8--21.9 & Broadphase collision; runs on static bodies too \\
+\texttt{{[}libdart.so{]}} unresolved & DART & 0--18.3 & Stripped DART internals; rebuild with \texttt{-g} to resolve \\
+\texttt{Ogre::Node::\_getDerived*} & Ogre2 & 0--22 & Scene-graph traversal; scales with sensor count \\
+\texttt{libnvidia-eglcore} & NVIDIA & 5.6--6.9 & GPU driver for headless rendering \\
+\texttt{BoxedLcpConstraintSolver} & DART & 2.1--3.5 & LCP solve; scales with contact count \\
+\texttt{BodyNode::getSkeleton/isReactive} & DART & 3.3--4.5 & Per-body accessors in solver loop \\
+\texttt{Frame::getWorldTransform} & DART & 2.2--4.4 & Kinematic chain traversal per link \\
+\texttt{\_int\_free + malloc*} & glibc & 1--2 & Allocator churn from per-step allocations \\
+\end{longtable}
+}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{optimization-recommendations-priority-ranked-gazebo-owned}{%
+\section{Optimization Recommendations}\label{optimization-recommendations}}
+
+\subsection{Priority 1: Replace EachNoCache in ProcessRecreateEntitiesRemove}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Evidence}: \texttt{ProcessRecreateEntitiesRemove} consumes a major fraction of CPU in \textbf{every world}:
+
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+World & \% of runtime \\
+\midrule
+3k\_shapes\_static & \textbf{45.0\%} \\
+jetty\_headless & \textbf{15.2\%} \\
+3k\_shapes\_dynamic & 10.8\% \\
+sensors\_nonrendering & 4.7\% \\
+sensors\_demo & 2.4\% \\
+gpu\_lidar & 1.7\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\item
+  \textbf{Impact}: Largest Gazebo-owned hotspot across all worlds. Scales linearly with total entity count.
+\item
+  \textbf{Location}: \texttt{gz-sim/src/SimulationRunner.cc:1510--1524} calls \texttt{EachNoCache<Model, Recreate>}, which iterates \textbf{all entities} via \texttt{Entities().Vertices()} (EntityComponentManager.hh:310), checking each one with \texttt{EntityMatches}. With zero \texttt{Recreate} components in any benchmark world, the full entity graph is scanned every step for nothing.
+\item
+  \textbf{Fix}: Switch to the cached \texttt{Each<Model, Recreate>()} which uses pre-built component indices instead of scanning all vertices. Alternatively, add an early-exit: \texttt{if (!entityCompMgr.HasComponentType<Recreate>()) return;} before the iteration.
+\end{itemize}
+
+\subsection{Priority 2: Eliminate per-step pose map rebuild in ChangedWorldPoses}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Evidence}: \texttt{SimulationFeatures::Write} contributes 26.8\% in 3k\_shapes\_static (via \texttt{\_Hashtable} operations), 7.5\% in 3k\_shapes\_dynamic
+\item
+  \textbf{Impact}: Second-largest Gazebo-owned hotspot in entity-heavy worlds. Scales linearly with link count.
+\item
+  \textbf{Location}: \texttt{gz-physics/dartsim/src/SimulationFeatures.cc:176--214}, \texttt{Write(ChangedWorldPoses)}
+\item
+  \textbf{Root cause}: Every step allocates a fresh \texttt{unordered\_map<size\_t, Pose3d>}, inserts all 3000 link poses (triggering multiple rehashes as the map grows from 0 to 3000 entries), then destroys the old map. Even when no poses change (static world), every link writes into the new map.
+\item
+  \textbf{Fix options}:
+  \begin{itemize}
+  \item \textbf{Quick}: Add \texttt{newPoses.reserve(this->links.size())} after line 183 to pre-allocate and eliminate rehashing.
+  \item \textbf{Better}: Reuse \texttt{prevLinkPoses} in place instead of rebuilding from scratch. Update only entries whose pose changed, remove entries for deleted links.
+  \item \textbf{Best}: For static links, skip the pose comparison entirely --- if the link is immobile, its pose cannot change.
+  \end{itemize}
+\end{itemize}
+
+\subsection{Priority 3: Cache texture/image decoding in jetty-class
+worlds}\label{priority-3-cache-textureimage-decoding-in-jetty-class-worlds}
+
+\begin{itemize}
+\item
+  \textbf{Evidence}: \texttt{stbi\_\_YCbCr\_to\_RGB\_simd} +
+  \texttt{stbi\_\_jpeg\_decode\_block} +
+  \texttt{stbi\_\_convert\_format} at \textasciitilde6\% in jetty
+  headless
+\item
+  \textbf{Impact}: \textasciitilde6\% CPU reduction for mesh-heavy
+  worlds
+\item
+  \textbf{Call path}:
+
+\begin{verbatim}
+RenderThread → SensorsPrivate::RunOnce → RenderUtil::Update
+  → SceneManager::CreateVisual → LoadGeometry → CreateMesh
+    → Ogre2MeshFactory::LoadImpl → BaseMaterial::CopyFrom
+      → Ogre2Material::SetTextureMapDataImpl
+        → gz::common::Image::RGBAData
+          → Image::Implementation::DataWithChannels
+            → stbi__convert_format / stbi__YCbCr_to_RGB_simd
+\end{verbatim}
+\item
+  \textbf{Root cause}: Visual creation happens \textbf{lazily during
+  simulation} --- \texttt{SceneManager::CreateVisual} is called from
+  \texttt{RenderUtil::Update} on the render thread, not at startup. Each
+  time a new visual is created, all its material textures are decoded
+  from JPEG via
+  \texttt{Ogre2Material::SetTextureMapDataImpl\ →\ gz::common::Image::RGBAData\ →\ stbi\_*}.
+  This means texture decoding competes with simulation on the render
+  thread.
+\item
+  \textbf{Location}: \texttt{gz-rendering/ogre2/src/Ogre2Material.cc}
+  (\texttt{SetTextureMapDataImpl}), \texttt{gz-common/src/Image.cc}
+  (\texttt{RGBAData}, \texttt{DataWithChannels})
+\item
+  \textbf{Fix options}:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    Cache decoded \texttt{Image::RGBAData} results so the same texture
+    isn't decoded twice across materials that share it
+  \item
+    Move visual creation to a pre-simulation loading phase instead of
+    lazy creation during \texttt{RenderUtil::Update}
+  \item
+    Pre-decode textures at world load time on a background thread, so
+    the render thread never blocks on JPEG decode
+  \end{itemize}
+\end{itemize}
+
+\hypertarget{priority-2-reduce-broadphase-cost-for-worlds-with-many-static-bodies}{%
+\subsection{Priority 4: Reduce broadphase cost for worlds with many
+static
+bodies}\label{priority-2-reduce-broadphase-cost-for-worlds-with-many-static-bodies}}
+
+\begin{itemize}
+\item
+  \textbf{Evidence}: \texttt{dxHashSpace::collide} at 2.6\% in
+  3k\_shapes\_static (no dynamic bodies), 21.9\% in jetty
+\item
+  \textbf{Impact}: The broadphase dominates collision-heavy worlds. In
+  mixed worlds (jetty: 300+ static models, 1 mobile robot), ODE sweeps
+  all shapes including static-vs-static pairs that can never produce new
+  contacts.
+\item
+  \textbf{Call path}:
+
+\begin{verbatim}
+SimulationRunner::Step → UpdateSystems → Physics::Update
+  → PhysicsPrivate::Step
+    → SimulationFeatures::WorldForwardStep
+      → dart::simulation::World::step              ← called unconditionally
+        → ConstraintSolver::solve
+          → ConstraintSolver::updateConstraints
+            → GzOdeCollisionDetector::collide       ← Gazebo-owned wrapper
+              → OdeCollisionDetector::collide
+                → dxHashSpace::collide              ← sweeps ALL shapes
+\end{verbatim}
+\item
+  \textbf{Current state}: gz-physics uses a \textbf{single collision
+  group per world} (via \texttt{getConstraintSolver()} →
+  \texttt{getCollisionGroup()}). All bodies --- static and dynamic ---
+  go into the same group. \texttt{BitmaskContactFilter} filters by
+  user-defined bitmask only and never checks whether a body is static.
+  gz-sim \emph{does} track static entities in
+  \texttt{PhysicsPrivate::staticEntities} (Physics.cc:365), but this
+  information never reaches the collision layer.
+\item
+  \textbf{Location}:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \texttt{gz-physics/dartsim/src/EntityManagementFeatures.cc}
+    (BitmaskContactFilter)
+  \item
+    \texttt{gz-physics/dartsim/src/SimulationFeatures.cc}
+    (WorldForwardStep)
+  \item
+    \texttt{gz-sim/src/systems/physics/Physics.cc} (staticEntities
+    tracking)
+  \end{itemize}
+\item
+  \textbf{Fix options (incremental)}:
+
+  \begin{enumerate}
+  \def\labelenumi{\arabic{enumi}.}
+  \tightlist
+  \item
+    \textbf{Quick win --- filter static-vs-static in
+    \texttt{BitmaskContactFilter::ignoresCollision}}: Add an
+    early-return when both bodies belong to immobile skeletons (DART
+    already exposes \texttt{Skeleton::isMobile()}). This skips
+    narrowphase and contact generation for static-vs-static pairs but
+    doesn't eliminate the broadphase sweep itself.
+  \item
+    \textbf{Architectural --- separate collision groups}: Create two
+    collision groups: one for dynamic bodies, one for static. Run
+    broadphase as dynamic-vs-dynamic and dynamic-vs-static only,
+    skipping static-vs-static entirely. This would require changes to
+    how gz-physics constructs and manages DART collision groups, and
+    would need to handle bodies transitioning between static and
+    dynamic.
+  \item
+    \textbf{Full-static shortcut}: In \texttt{WorldForwardStep}, if all
+    bodies in the world are static, skip
+    \texttt{world-\textgreater{}step()} entirely. Edge case but cheap to
+    implement.
+  \end{enumerate}
+\item
+  \textbf{Note}: The broadphase sweep (\texttt{dxHashSpace::collide}) is
+  ODE-internal and runs before any Gazebo filter is called. Options 1
+  and 3 help but don't touch the broadphase itself. Only option 2
+  eliminates the static-vs-static broadphase pairs at the ODE level.
+\end{itemize}
+
+\hypertarget{priority-3-optimize-bitmaskcontactfilterignorescollision-and-odecollisionobjectupdateenginedata}{%
+\subsection{\texorpdfstring{Priority 5: Optimize
+\texttt{BitmaskContactFilter::ignoresCollision} and
+\texttt{OdeCollisionObject::updateEngineData}}{Priority 3: Optimize BitmaskContactFilter::ignoresCollision and OdeCollisionObject::updateEngineData}}\label{priority-3-optimize-bitmaskcontactfilterignorescollision-and-odecollisionobjectupdateenginedata}}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Evidence}: Combined 2.5-2.7\% in collision-heavy worlds
+  (jetty)
+\item
+  \textbf{Impact}: Small per-world, but these are called per-pair and
+  per-object --- scales with scene complexity
+\item
+  \textbf{Location}:
+  \texttt{gz-physics/dartsim/src/GzCollisionDetector.cc},
+  \texttt{EntityManagementFeatures.cc}
+\item
+  \textbf{Fix}: Inline bitmask check; dirty-flag on updateEngineData to
+  skip unchanged objects
+\end{itemize}
+
+\hypertarget{priority-4-reduce-loading-time-for-large-entity-counts}{%
+\subsection{Priority 6: Reduce loading time for large entity
+counts}\label{priority-4-reduce-loading-time-for-large-entity-counts}}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Evidence}: 3k\_shapes takes 26s to load;
+  \texttt{SceneGraphAddEntities} visible in 3k\_shapes, recursive
+  \texttt{Element::ToString} → \texttt{GetExplicitlySetInFile} visible
+  in jetty
+\item
+  \textbf{Impact}: Critical for large-scale simulation startup
+\item
+  \textbf{Location}:
+  \texttt{gz-sim/src/systems/scene\_broadcaster/SceneBroadcaster.cc},
+  \texttt{gz-sim/src/EntityComponentManager.cc}
+\item
+  \textbf{Fix}: The bottleneck is
+  \texttt{SdfModelSerializer::Serialize}, which converts every entity's
+  SDF to string via recursive \texttt{Element::ToString} on first
+  PostUpdate. Consider lazy serialization (serialize only when a
+  subscriber requests), caching the serialized form so it isn't
+  recomputed, or replacing the string-based serialization with a binary
+  format.
+  Additionally, \texttt{ServerPrivate::DownloadAssets} wastes 9\% of loading time.
+  The server parses the SDF twice by design --- once for fast GUI startup (discarding
+  models), then again on a background thread to resolve Fuel URIs and recover the models.
+  When no Fuel URIs are present, the first parse already has everything needed. The fix:
+  detect worlds with no Fuel URIs and keep the models from the first parse instead of
+  discarding and re-parsing them.
+  Finally, \texttt{pybind11::initialize\_interpreter} adds a fixed \textasciitilde 200--260ms
+  to every server startup by unconditionally initializing the Python interpreter
+  (1--7.5\% of loading depending on world complexity). Lazy initialization
+  would eliminate this cost for the majority of worlds that don't use Python plugins.
+\end{itemize}
+
+\hypertarget{priority-5-investigate-ecs-view-and-thread-barrier-overhead}{%
+\subsection{Priority 7: Investigate ECS View and thread barrier
+overhead}\label{priority-5-investigate-ecs-view-and-thread-barrier-overhead}}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Evidence}: \texttt{BaseView::ResetNewEntityState} (0.5-0.9\%),
+  \texttt{Barrier::Wait} (1\%), \texttt{pthread\_cond\_wait} (1.8\%) in
+  sensor worlds
+\item
+  \textbf{Impact}: Small per-world, but represents framework tax on
+  every step
+\item
+  \textbf{Location}: \texttt{gz-sim/src/detail/View.hh},
+  \texttt{gz-sim/src/Barrier.cc}
+\item
+  \textbf{Fix}: Investigate if view state reset is needed when entities
+  haven't changed; consider lock-free barriers
+\end{itemize}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\section{Validating Optimizations with GZ\_PROFILE}\label{validating-optimizations}
+
+The flamegraph-based analysis in this report identified optimization targets using statistical CPU sampling. To validate that each optimization delivers the expected improvement, we recommend using the \texttt{GZ\_PROFILE} (Remotery) instrumentation for before/after comparison.
+
+\subsection{Why GZ\_PROFILE for validation}
+
+Flamegraphs are ideal for \emph{discovery} --- finding where time goes across the full stack. However, \texttt{GZ\_PROFILE} is better for \emph{measuring the effect of a specific optimization} because:
+
+\begin{itemize}
+\tightlist
+\item \textbf{Named scopes give consistent measurement points} --- the same code block is measured every time, enabling direct comparison between baseline and optimized versions
+\item \textbf{Per-step resolution} --- Remotery shows how long each scope takes per simulation step (e.g., ``this function dropped from 4.5ms to 0.01ms per step''), not just aggregate percentages
+\item \textbf{Deterministic timing} --- flamegraphs are statistical (sampling at 997 Hz), so small improvements are hard to distinguish from noise. \texttt{GZ\_PROFILE} timestamps are deterministic
+\end{itemize}
+
+\subsection{Validation workflow}
+
+For each priority optimization:
+
+\begin{enumerate}
+\item \textbf{Baseline}: Run the benchmark world with the current code. Record the Remotery per-step timing for the relevant scope.
+\item \textbf{Optimize}: Apply the code change.
+\item \textbf{Re-measure}: Run the same benchmark world. Record the new per-step timing for the same scope.
+\item \textbf{Report}: Document the before/after timing and the percentage reduction.
+\end{enumerate}
+
+\subsection{Existing GZ\_PROFILE scopes for each priority}
+
+As part of this study, 17 new \texttt{GZ\_PROFILE} points were added to \texttt{gz-physics/dartsim} to break the previously opaque \texttt{WorldForwardStep} call into observable sub-phases: pre-step gravity, DART world step, NaN checking, pose output, collision detection wrappers, kinematics queries, and SDF model construction methods.
+
+The following scopes are already in place to measure each optimization target:
+
+{\footnotesize
+\begin{longtable}[]{@{}lll@{}}
+\toprule
+Priority & Optimization target & GZ\_PROFILE scope \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+1 & \texttt{ProcessRecreateEntitiesRemove} & \texttt{SimulationRunner::ProcessRecreateEntitiesRemove} \\
+2 & \texttt{Write(ChangedWorldPoses)} & \texttt{dartsim::Write::ChangedWorldPoses} \\
+3 & Texture decode & Scope needed --- add to \texttt{Ogre2Material.cc} \\
+4 & Broadphase for static bodies & \texttt{dartsim::OdeCollide} \\
+5 & \texttt{BitmaskContactFilter} + \texttt{updateEngineData} & Scope needed --- add to \texttt{EntityManagementFeatures.cc} \\
+6 & \texttt{DownloadAssets} + SDF re-parse & Scope needed --- add to \texttt{ServerPrivate.cc} \\
+7 & \texttt{Barrier::Wait} + ECS views & Scope exists in \texttt{SimulationRunner} \\
+\end{longtable}
+}
+
+Scopes marked ``needed'' should be added before beginning the optimization work so that the baseline measurement uses the same instrumentation as the post-optimization measurement.
+
+\subsection{Recommended benchmark worlds per priority}
+
+\begin{itemize}
+\tightlist
+\item \textbf{Priority 1} (ProcessRecreateEntities): Use \texttt{3k\_shapes\_static.sdf} (45\%) or \texttt{jetty.sdf} (15.2\%)
+\item \textbf{Priority 2} (Write ChangedWorldPoses): Use \texttt{3k\_shapes\_static.sdf} (26.8\%)
+\item \textbf{Priority 3} (texture decode): Use \texttt{jetty.sdf} (6\%)
+\item \textbf{Priority 4} (broadphase): Use \texttt{jetty.sdf} (21.9\%)
+\item \textbf{Priority 5} (BitmaskContactFilter): Use \texttt{jetty.sdf} (1.5\%)
+\item \textbf{Priority 6} (loading time): Use \texttt{3k\_shapes\_static.sdf} (26s loading)
+\item \textbf{Priority 7} (ECS/barriers): Use \texttt{sensors.sdf} (4.7\%)
+\end{itemize}
+
+All benchmark worlds with \texttt{RTF=0} are available in the repository's \texttt{worlds/} directory.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{instrumentation-gaps}{%
+\section{Instrumentation Gaps}\label{instrumentation-gaps}}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{\texttt{{[}libdart.so.6.13.2{]}} unresolved}: 1.5-10.2\%
+  across worlds. Rebuilding DART with \texttt{-g} would expose internal
+  hotspots. Especially important for 3k\_shapes\_dynamic where 10.2\% is
+  opaque.
+\item
+  \textbf{\texttt{{[}unknown{]}} frames}: 10-35\% in several worlds ---
+  kernel stacks and stripped system libraries.
+  \texttt{-\/-call-graph\ dwarf} or installing
+  \texttt{linux-image-dbgsym} would resolve some.
+\item
+  \textbf{\texttt{void}/\texttt{operator}/\texttt{unsigned} demangling
+  artifacts}: 12-35\% --- FlameGraph's stack-folding splits on
+  \texttt{;} inside demangled C++ template signatures. Not real
+  functions; their cost belongs to the parent frame.
+\item
+  \textbf{Ogre2 internals}: Scene-graph traversal is 22\% in
+  sensors\_demo but Ogre2 doesn't have debug symbols. Rebuilding Ogre2
+  with \texttt{-g} would reveal whether the cost is in dirty-flag
+  checking, matrix multiplication, or memory layout.
+\end{itemize}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{appendix}{%
+\section{Appendix}\label{appendix}}
+
+\hypertarget{a-flamegraph-svg-locations}{%
+\subsection{A: Flamegraph SVG
+Locations}\label{a-flamegraph-svg-locations}}
+
+\textbf{Runtime} (in \texttt{profiling/captures/flamegraphs/runtime/}):
+
+\begin{verbatim}
+3k_shapes_static.svg
+3k_shapes_dynamic.svg
+sensors_nonrendering.svg
+jetty_headless.svg
+gpu_lidar.svg
+sensors_demo.svg
+\end{verbatim}
+
+\textbf{Loading} (in \texttt{profiling/captures/flamegraphs/loading/}):
+
+\begin{verbatim}
+3k_shapes_static_loading.svg
+3k_shapes_dynamic_loading.svg
+sensors_nonrendering_loading.svg
+jetty_loading.svg
+gpu_lidar_loading.svg
+sensors_demo_loading.svg
+\end{verbatim}
+
+\hypertarget{b-gz_profile-instrumentation-added}{%
+\subsection{B: GZ\_PROFILE Instrumentation
+Added}\label{b-gz_profile-instrumentation-added}}
+
+17 profile points added to gz-physics/dartsim: -
+\texttt{SimulationFeatures.cc}: 7 points (WorldForwardStep + 6 new
+sub-phases) - \texttt{GzCollisionDetector.cc}: 4 points (ODE + Bullet
+collide wrappers) - \texttt{SDFFeatures.cc}: 5 points (ConstructSdf*
+methods) - \texttt{KinematicsFeatures.cc}: 1 point
+(FrameDataRelativeToWorld)
+
+\hypertarget{c-loading-wall-clock-times}{%
+\subsection{C: Loading Wall-Clock
+Times}\label{c-loading-wall-clock-times}}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule\noalign{}
+World & Time \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+3k\_shapes\_static & 26.0s \\
+3k\_shapes\_dynamic & 26.6s \\
+jetty & 7.8s \\
+sensors\_nonrendering & 2.4s \\
+gpu\_lidar & 0.06s \\
+sensors\_demo & 0.03s \\
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{references}{%
+\subsection{References}\label{references}}
+
+{[}1{]} B. Gregg, ``Flame Graphs,'' \emph{ACM Queue}, vol.~14, no. 2,
+pp.~91-110, 2016. Software available at
+https://github.com/brendangregg/FlameGraph
+
+\end{document}

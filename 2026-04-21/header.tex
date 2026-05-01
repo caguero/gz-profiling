@@ -1,0 +1,30 @@
+\usepackage{float}
+\floatplacement{figure}{H}
+\usepackage{geometry}
+\geometry{margin=0.6in}
+\usepackage{microtype}
+\emergencystretch=5em
+\setlength{\parskip}{0.5em}
+
+% Shrink monospace font to avoid code/paths overflowing margins
+\usepackage{fvextra}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\},fontsize=\small}
+
+% Force separate title page
+\usepackage{graphicx}
+\renewcommand{\maketitle}{
+  \begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\Huge\bfseries Gazebo Performance Profiling Report\par}
+    \vspace{1.5cm}
+    \includegraphics[width=0.3\textwidth]{figures/gazebo_logo.png}\par
+    \vspace{1.5cm}
+    {\Large Carlos Ag\"uero\par}
+    \vspace{0.3cm}
+    {\normalsize caguero@honurobotics.com\par}
+    \vspace{1cm}
+    {\large May 2026\par}
+    \vfill
+  \end{titlepage}
+}
