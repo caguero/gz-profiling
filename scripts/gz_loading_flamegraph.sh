@@ -19,20 +19,32 @@ WORLD="${1:?Usage: $0 <world.sdf> <label>}"
 LABEL="${2:?Usage: $0 <world.sdf> <label>}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-FLAMEGRAPH_DIR="$WS_DIR/tools/FlameGraph"
-OUTPUT_DIR="$WS_DIR/profiling/captures/flamegraphs/loading"
-GZ_SIM_MAIN="$WS_DIR/install/libexec/gz/sim/gz-sim-main"
+FLAMEGRAPH_DIR="${FLAMEGRAPH_DIR:-$(pwd)/FlameGraph}"
+OUTPUT_DIR="${OUTPUT_DIR:-$(pwd)/captures/loading}"
+GZ_SIM_MAIN="${GZ_SIM_MAIN:-$(which gz-sim-main 2>/dev/null || echo "")}"
+
+# Try common locations if not found
+if [[ -z "$GZ_SIM_MAIN" || ! -x "$GZ_SIM_MAIN" ]]; then
+    for candidate in \
+        "$(dirname "$SCRIPT_DIR")/../../install/libexec/gz/sim/gz-sim-main" \
+        "/usr/libexec/gz/sim/gz-sim-main"; do
+        if [[ -x "$candidate" ]]; then
+            GZ_SIM_MAIN="$candidate"
+            break
+        fi
+    done
+fi
 
 mkdir -p "$OUTPUT_DIR"
 
 # Verify prerequisites
-if [[ ! -x "$GZ_SIM_MAIN" ]]; then
-    echo "ERROR: gz-sim-main not found at $GZ_SIM_MAIN" >&2
+if [[ -z "$GZ_SIM_MAIN" || ! -x "$GZ_SIM_MAIN" ]]; then
+    echo "ERROR: gz-sim-main not found. Set GZ_SIM_MAIN or add it to PATH." >&2
     exit 1
 fi
 if [[ ! -f "$FLAMEGRAPH_DIR/flamegraph.pl" ]]; then
     echo "ERROR: FlameGraph scripts not found at $FLAMEGRAPH_DIR" >&2
+    echo "  Set FLAMEGRAPH_DIR or clone https://github.com/brendangregg/FlameGraph" >&2
     exit 1
 fi
 if [[ "$(cat /proc/sys/kernel/perf_event_paranoid)" -gt 1 ]]; then
@@ -41,9 +53,7 @@ if [[ "$(cat /proc/sys/kernel/perf_event_paranoid)" -gt 1 ]]; then
     exit 1
 fi
 
-# Source workspace
-source "$WS_DIR/install/setup.bash"
-export GZ_CONFIG_PATH="$WS_DIR/install/share/gz:${GZ_CONFIG_PATH:-}"
+# Note: source your workspace setup.bash and set GZ_CONFIG_PATH before running this script
 
 echo "=== Loading Flamegraph: $LABEL ==="
 echo "  World:  $WORLD"
