@@ -170,30 +170,29 @@ echo ""
 echo "============================================"
 echo "  Summary"
 echo "============================================"
+echo "  'Responsible' = time spent under the nearest Gazebo function"
+echo "  in the call stack, regardless of whether the leaf is Gazebo"
+echo "  code or an external library called from Gazebo."
+echo ""
 
-# Calculate totals using awk to handle demangling artifacts (void, operator, unsigned, bool)
-# that grep patterns can't reliably match as standalone words.
-awk '{ n=split($1,a,";"); printf "%s\t%d\n", a[n], $NF }' "$FOLDED" \
-    | awk -F'\t' '{s[$1]+=$2} END {for(k in s) printf "%d\t%s\n",s[k],k}' \
-    | awk -F'\t' -v total="$TOTAL" -v gz_pat="$GZ_PATTERN" -v ext_pat="$EXT_PATTERN" '
-    BEGIN { gz=0; ext=0; other=0 }
-    {
-        samples = $1
-        func = $2
-        # Demangling artifacts — classify as external/noise
-        if (func == "void" || func == "operator" || func == "unsigned" || func == "bool" || func == "non-virtual" || func == "virtual") {
-            ext += samples
-        } else if (match(func, gz_pat)) {
-            gz += samples
-        } else if (match(func, ext_pat)) {
-            ext += samples
-        } else {
-            other += samples
+# For each stack, find the deepest gz:: function. If found, attribute the
+# entire sample to Gazebo. If no gz:: function in the stack, attribute to external.
+awk -v total="$TOTAL" '
+BEGIN { gz=0; ext=0 }
+{
+    n = split($1, a, ";")
+    samples = $NF
+    found_gz = 0
+    for (i = n; i >= 1; i--) {
+        if (match(a[i], /gz::sim::|gz::physics::dartsim::|gz::rendering::|gz::common::|gz::math::|gz::transport::|gz::sensors::|SimulationRunner::|SimulationFeatures::|gz::sim::v11::systems::|gz::sim::v11::detail::|ServerPrivate::/)) {
+            found_gz = 1
+            break
         }
     }
-    END {
-        printf "\n"
-        printf "  Gazebo-owned:  %6.1f%%\n", gz * 100.0 / total
-        printf "  External libs: %6.1f%%\n", ext * 100.0 / total
-        printf "  Other/noise:   %6.1f%%\n", other * 100.0 / total
-    }'
+    if (found_gz) gz += samples
+    else ext += samples
+}
+END {
+    printf "  Gazebo responsible: %5.1f%%\n", gz * 100.0 / total
+    printf "  External only:      %5.1f%%\n", ext * 100.0 / total
+}' "$FOLDED"
