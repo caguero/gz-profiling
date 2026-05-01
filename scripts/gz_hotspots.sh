@@ -15,7 +15,7 @@
 # RenderUtil, BaseView, Barrier, stbi_* (vendored in gz-common),
 # Image:: (gz::common::Image)
 
-set -eo pipefail
+set +o pipefail
 
 FOLDED="${1:?Usage: $0 <file.folded> [top_n]}"
 TOP_N="${2:-15}"
@@ -35,7 +35,9 @@ GZ_PATTERN='gz::sim::|gz::physics::dartsim::|gz::rendering::|gz::common::|gz::ma
 
 # External pattern (things we know are NOT Gazebo)
 # External pattern: third-party libraries + C++ stdlib containers + demangling noise
-EXT_PATTERN='dart::|dxHash|dxGeom|dxSafe|Ogre::|libnvidia|\[libdart|\[unknown\]|pthread_|_int_free|_int_malloc|malloc_consolidate|cfree|__memset|__memmove|clone3|start_thread|\[\[vdso\]\]|\[libstdc\+\+|BoxedLcp|ConstraintSolver|ConstrainedGroup|BodyNode::|Frame::get|DegreeOfFreedom::|Skeleton::|CollisionGroup::|CollisionObject::|ContactConstraint|OdeCollisionDetector|BulletCollisionDetector|std::_Hashtable|std::_Rb_tree|std::__detail|std::__cxx11|std::pair<std::|std::set<unsigned|std::unordered|std::vector|std::atomic|operator new|operator delete|^void$|^operator$|^unsigned$|^bool$|Eigen::|sdf::v|tinyxml2::|google::protobuf|zmq_|__GI_|__poll|futex|lll_mutex'
+# Also includes gz::physics template wrappers (ForwardStep::World, SpecifyData, ExpectData)
+# that are thin delegation layers, not actionable Gazebo code.
+EXT_PATTERN='dart::|dxHash|dxGeom|dxSafe|dxSpace|dxSphere|dxCylinder|dGeom|dRfromQ|Ogre::|libnvidia|\[libdart|\[unknown\]|pthread_|_int_free|_int_malloc|malloc_consolidate|cfree|__memset|__memmove|__memcpy|clone3|start_thread|\[\[vdso\]\]|\[libstdc\+\+|BoxedLcp|ConstraintSolver|ConstrainedGroup|BodyNode::|Frame::get|DegreeOfFreedom::|Skeleton::|CollisionGroup::|CollisionObject::|ContactConstraint|OdeCollisionDetector|BulletCollisionDetector|ForwardStep::World|gz::physics::SpecifyData|gz::physics::ExpectData|gz::physics::CompositeData|gz::physics::FrameSemantics|std::_Hashtable|std::_Rb_tree|std::__detail|std::__cxx11|std::pair<std::|std::set<unsigned|std::unordered|std::vector|std::atomic|std::function|std::chrono|std::enable_if|std::_Optional|std::_Sp_counted|operator new|operator delete|Eigen::|sdf::v|tinyxml2::|google::protobuf|zmq_|__GI_|__poll|__tls_get|__scalbn|futex|lll_mutex|unlink_chunk'
 
 echo "============================================"
 echo "  Gazebo Hotspot Analysis: $LABEL"
@@ -169,20 +171,29 @@ echo "============================================"
 echo "  Summary"
 echo "============================================"
 
-# Calculate total Gazebo-owned self-time
-GZ_TOTAL=$(awk '{ n=split($1,a,";"); printf "%s\t%d\n", a[n], $NF }' "$FOLDED" \
+# Calculate totals using awk to handle demangling artifacts (void, operator, unsigned, bool)
+# that grep patterns can't reliably match as standalone words.
+awk '{ n=split($1,a,";"); printf "%s\t%d\n", a[n], $NF }' "$FOLDED" \
     | awk -F'\t' '{s[$1]+=$2} END {for(k in s) printf "%d\t%s\n",s[k],k}' \
-    | grep -E "$GZ_PATTERN" \
-    | awk -F'\t' '{s+=$1} END {print s+0}')
-
-EXT_TOTAL=$(awk '{ n=split($1,a,";"); printf "%s\t%d\n", a[n], $NF }' "$FOLDED" \
-    | awk -F'\t' '{s[$1]+=$2} END {for(k in s) printf "%d\t%s\n",s[k],k}' \
-    | grep -E "$EXT_PATTERN" \
-    | awk -F'\t' '{s+=$1} END {print s+0}')
-
-OTHER=$((TOTAL - GZ_TOTAL - EXT_TOTAL))
-
-echo ""
-printf "  Gazebo-owned:  %6.1f%%\n" "$(echo "$GZ_TOTAL * 100.0 / $TOTAL" | bc -l)"
-printf "  External libs: %6.1f%%\n" "$(echo "$EXT_TOTAL * 100.0 / $TOTAL" | bc -l)"
-printf "  Other/noise:   %6.1f%%\n" "$(echo "$OTHER * 100.0 / $TOTAL" | bc -l)"
+    | awk -F'\t' -v total="$TOTAL" -v gz_pat="$GZ_PATTERN" -v ext_pat="$EXT_PATTERN" '
+    BEGIN { gz=0; ext=0; other=0 }
+    {
+        samples = $1
+        func = $2
+        # Demangling artifacts — classify as external/noise
+        if (func == "void" || func == "operator" || func == "unsigned" || func == "bool" || func == "non-virtual" || func == "virtual") {
+            ext += samples
+        } else if (match(func, gz_pat)) {
+            gz += samples
+        } else if (match(func, ext_pat)) {
+            ext += samples
+        } else {
+            other += samples
+        }
+    }
+    END {
+        printf "\n"
+        printf "  Gazebo-owned:  %6.1f%%\n", gz * 100.0 / total
+        printf "  External libs: %6.1f%%\n", ext * 100.0 / total
+        printf "  Other/noise:   %6.1f%%\n", other * 100.0 / total
+    }'
