@@ -44,8 +44,11 @@ echo ""
 # 1. Gazebo-owned functions by SELF-TIME (leaf)
 # ---------------------------------------------------------------
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Gazebo-owned functions (self-time)"
+echo "  1. Gazebo-owned functions (self-time)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Functions in gz:: namespaces ranked by time spent in the function"
+echo "  itself (not its children). These are the direct CPU consumers —"
+echo "  the code where the CPU is actually executing."
 echo ""
 
 awk '{ n=split($1,a,";"); printf "%s\t%d\n", a[n], $NF }' "$FOLDED" \
@@ -64,8 +67,12 @@ echo ""
 # 2. Gazebo-owned functions by INCLUSIVE TIME (anywhere in stack)
 # ---------------------------------------------------------------
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Gazebo-owned functions (inclusive time)"
+echo "  2. Gazebo-owned functions (inclusive time)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Functions ranked by total time spent in the function AND all its"
+echo "  children. High inclusive time means the function is responsible for"
+echo "  a large call subtree. Useful for identifying which high-level"
+echo "  Gazebo function 'owns' the most CPU."
 echo ""
 
 # For each stack, find all unique gz:: functions and attribute the full sample to each
@@ -97,8 +104,11 @@ echo ""
 # 3. External functions for context (self-time)
 # ---------------------------------------------------------------
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  External functions (context, self-time)"
+echo "  3. External functions (context, self-time)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Functions in third-party libraries (DART, ODE, Ogre, glibc, etc.)"
+echo "  ranked by self-time. Not directly actionable in Gazebo code, but"
+echo "  provides context. See section 4 for which Gazebo code triggers them."
 echo ""
 
 awk '{ n=split($1,a,";"); printf "%s\t%d\n", a[n], $NF }' "$FOLDED" \
@@ -117,8 +127,11 @@ echo ""
 # 4. Attribution: nearest Gazebo caller of hot external functions
 # ---------------------------------------------------------------
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Attribution: Gazebo callers of external hotspots"
+echo "  4. Attribution: Gazebo callers of external hotspots"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Maps each external hotspot to the nearest Gazebo function that"
+echo "  called it (format: GazeboFunc -> ExternalFunc). Answers the"
+echo "  question: 'which Gazebo code is responsible for this external cost?'"
 echo ""
 
 # For each stack, find the leaf (external), then walk up to find the nearest gz:: caller
