@@ -454,56 +454,6 @@ world)}\label{loading-capture-command-per-world}}
 \end{Highlighting}
 \end{Shaded}
 
-\subsection{Data Organization}
-
-All profiling data is stored under \texttt{\textasciitilde{}/rotary\_ws/profiling/} with the following structure:
-
-\begin{verbatim}
-profiling/
-  worlds/                          # Modified benchmark world SDFs
-    3k_shapes.sdf                  #   Dynamic variant (RTF=0)
-    3k_shapes_static.sdf           #   Static variant (RTF=0, all models static)
-    sensors.sdf                    #   Non-rendering sensors (RTF=0)
-    jetty.sdf                      #   Complex real-world scene (RTF=0)
-    gpu_lidar_sensor.sdf           #   GPU lidar (RTF=0)
-    sensors_demo.sdf               #   Multi-sensor rendering (RTF=0)
-  captures/
-    flamegraphs/
-      runtime/                     # Steady-state captures (30s each)
-        perf_<label>.data          #   Raw perf binary data
-        <label>.folded             #   Collapsed stacks (text)
-        <label>.svg                #   Interactive flamegraph
-      loading/                     # Startup captures (1 iteration)
-        perf_<label>_loading.data  #   Raw perf binary data
-        <label>_loading.folded     #   Collapsed stacks (text)
-        <label>_loading.svg        #   Interactive flamegraph
-        <label>_wallclock.txt      #   Wall-clock loading time
-    remotery/                      # Remotery screenshots (manual)
-  analysis/
-    findings_report.tex            # This report (LaTeX source)
-    findings_report.pdf            # This report (compiled)
-    findings_report.md             # Original markdown source
-    header.tex                     # LaTeX preamble/formatting
-    figures/                       # Flamegraph PNGs for the report
-  scripts/
-    gz_flamegraph.sh               # Runtime capture script
-    gz_loading_flamegraph.sh       # Loading capture script
-    capture_all.sh                 # Captures all worlds in a directory
-    gz_hotspots.sh                 # Gazebo hotspot analysis from .folded
-    gz_cache_stats.sh              # CPU cache miss/IPC measurement
-    gz_cache_flamegraph.sh         # Cache-miss flamegraph capture
-    gz_compare_cpu_cache.sh        # CPU vs cache-miss comparison
-\end{verbatim}
-
-\textbf{File types:}
-\begin{itemize}
-\tightlist
-\item \texttt{perf\_*.data} --- raw binary capture from \texttt{perf record}. Contains all stack samples. Can be re-analyzed with \texttt{perf report} or \texttt{perf script}. Large files; can be deleted once \texttt{.folded} files are generated.
-\item \texttt{*.folded} --- collapsed stack traces in text format (one line per unique stack, with sample count). Input for \texttt{flamegraph.pl} and \texttt{gz\_hotspots.sh}.
-\item \texttt{*.svg} --- interactive flamegraph. Open in a web browser; click frames to zoom, Ctrl+F to search.
-\item \texttt{*\_wallclock.txt} --- wall-clock time for loading captures, recorded via the \texttt{time} command.
-\end{itemize}
-
 \subsection{Online Repository}
 
 All interactive flamegraphs, capture scripts, benchmark worlds, and the PDF report are published at:
