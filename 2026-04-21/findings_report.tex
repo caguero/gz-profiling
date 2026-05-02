@@ -1315,6 +1315,56 @@ overhead}\label{priority-5-investigate-ecs-view-and-thread-barrier-overhead}}
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 
+\section{CPU Cache Analysis}
+
+In addition to flamegraph-based CPU sampling, hardware performance counters were used to measure cache efficiency via \texttt{perf stat}. Instructions Per Cycle (IPC) indicates how efficiently the CPU executes: a modern CPU should achieve 2--4 IPC; values below 1 indicate the CPU is stalled waiting for data from RAM due to cache misses.
+
+\subsection{Runtime cache performance}
+
+{\footnotesize
+\begin{longtable}[]{@{}lrrrrl@{}}
+\toprule
+World & Cache miss & LLC miss & IPC & Assessment \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+\textbf{3k\_shapes\_static} & \textbf{72.6\%} & \textbf{60.6\%} & \textbf{0.27} & Severely memory-bound \\
+\textbf{3k\_shapes\_dynamic} & \textbf{82.3\%} & \textbf{75.3\%} & \textbf{0.91} & Severely memory-bound \\
+jetty & 19.3\% & 11.2\% & 1.14 & Moderate \\
+sensors & 5.0\% & 1.6\% & 1.95 & Healthy \\
+gpu\_lidar & 2.5\% & 0.7\% & 2.17 & Healthy \\
+sensors\_demo & 4.4\% & 1.9\% & 2.39 & Healthy \\
+\end{longtable}
+}
+
+The 3k\_shapes worlds are \textbf{catastrophically cache-hostile}: 73--82\% of cache accesses miss, 61--75\% of L3 accesses go to main memory, and the CPU achieves only 0.27--0.91 IPC (stalled 70--90\% of the time waiting for RAM). This means the \texttt{ProcessRecreateEntitiesRemove} scanning 3000 hash-map vertices and \texttt{Write(ChangedWorldPoses)} rebuilding a 3000-entry map aren't just algorithmically wasteful --- they \textbf{thrash every level of the cache hierarchy}.
+
+This adds a second optimization lever beyond the algorithmic fixes in Section~7: \textbf{data structure layout}. Switching from \texttt{unordered\_map} to contiguous storage (e.g., a flat vector sorted by entity ID) would dramatically improve cache performance by enabling sequential memory access instead of pointer-chasing through heap-allocated hash-map nodes.
+
+\subsection{Loading cache performance}
+
+{\footnotesize
+\begin{longtable}[]{@{}lrrrl@{}}
+\toprule
+World & Load time & LLC misses & IPC & Assessment \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+\textbf{3k\_shapes\_static} & 32.5s & 306M & \textbf{0.73} & Memory-bound \\
+\textbf{3k\_shapes\_dynamic} & 32.2s & 302M & \textbf{0.72} & Memory-bound \\
+\textbf{jetty} & 10.9s & 96M & \textbf{0.79} & Memory-bound \\
+gpu\_lidar & 2.8s & 2.7M & 1.08 & Moderate \\
+sensors\_demo & 3.0s & 3.6M & 0.85 & Moderate \\
+sensors & 2.3s & 1.6M & 1.26 & Healthy \\
+\end{longtable}
+}
+
+The loading phase shows the same pattern --- entity/model construction for large worlds (3k\_shapes, jetty) involves building graph structures and hash maps that thrash the cache during startup.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
 \section{Validating Optimizations with GZ\_PROFILE}\label{validating-optimizations}
 
 The flamegraph-based analysis in this report identified optimization targets using statistical CPU sampling. To validate that each optimization delivers the expected improvement, we recommend using the \texttt{GZ\_PROFILE} (Remotery) instrumentation for before/after comparison.
