@@ -385,74 +385,66 @@ framework overhead from physics engine cost:
   \texttt{\textasciitilde{}/rotary\_ws/tools/FlameGraph/}
 \end{itemize}
 
-\hypertarget{build-command}{%
-\subsection{Build Command}\label{build-command}}
+\subsection{Build Command}
 
-\begin{Shaded}
-\begin{Highlighting}[]
-\BuiltInTok{cd}\NormalTok{ \textasciitilde{}/rotary\_ws}
-\ExtensionTok{colcon}\NormalTok{ build }\AttributeTok{{-}{-}merge{-}install} \DataTypeTok{\textbackslash{}}
-  \AttributeTok{{-}{-}cmake{-}args} \AttributeTok{{-}DENABLE\_PROFILER}\OperatorTok{=}\NormalTok{OFF }\DataTypeTok{\textbackslash{}}
-               \AttributeTok{{-}DCMAKE\_BUILD\_TYPE}\OperatorTok{=}\NormalTok{RelWithDebInfo }\DataTypeTok{\textbackslash{}}
-               \AttributeTok{{-}DCMAKE\_CXX\_FLAGS}\OperatorTok{=}\StringTok{"{-}fno{-}omit{-}frame{-}pointer"} \DataTypeTok{\textbackslash{}}
-               \AttributeTok{{-}DCMAKE\_C\_FLAGS}\OperatorTok{=}\StringTok{"{-}fno{-}omit{-}frame{-}pointer"}
-\end{Highlighting}
-\end{Shaded}
+\begin{verbatim}
+cd ~/your_ws
+colcon build --merge-install \
+  --cmake-args -DENABLE_PROFILER=OFF \
+               -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+               -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer" \
+               -DCMAKE_C_FLAGS="-fno-omit-frame-pointer"
+\end{verbatim}
 
-\hypertarget{environment-setup}{%
-\subsection{Environment Setup}\label{environment-setup}}
+\subsection{Environment Setup}
 
-\begin{Shaded}
-\begin{Highlighting}[]
-\BuiltInTok{source}\NormalTok{ \textasciitilde{}/rotary\_ws/install/setup.bash}
-\BuiltInTok{export} \VariableTok{GZ\_CONFIG\_PATH}\OperatorTok{=}\NormalTok{\textasciitilde{}/rotary\_ws/install/share/gz:}\VariableTok{$GZ\_CONFIG\_PATH}
-\BuiltInTok{export} \VariableTok{GZ\_SIM\_RESOURCE\_PATH}\OperatorTok{=}\NormalTok{\textasciitilde{}/jetty\_demo/jetty\_demo/models:}\VariableTok{$GZ\_SIM\_RESOURCE\_PATH}
-\FunctionTok{sudo}\NormalTok{ sysctl kernel.perf\_event\_paranoid=1}
-\end{Highlighting}
-\end{Shaded}
+\begin{verbatim}
+source ~/your_ws/install/setup.bash
+export GZ_CONFIG_PATH=~/your_ws/install/share/gz:$GZ_CONFIG_PATH
+export GZ_SIM_MAIN=~/your_ws/install/libexec/gz/sim/gz-sim-main
+export FLAMEGRAPH_DIR=~/FlameGraph
+sudo sysctl kernel.perf_event_paranoid=1
+\end{verbatim}
 
-\hypertarget{modified-world-sdfs}{%
-\subsection{Modified World SDFs}\label{modified-world-sdfs}}
+\subsection{Modified World SDFs}
 
-All benchmark worlds were copied to
-\texttt{\textasciitilde{}/rotary\_ws/profiling/worlds/} with the SDF tag
-\texttt{real\_time\_factor} set to \texttt{0}
-to saturate CPU (eliminate pacing overhead).
+All benchmark worlds are in the repository's \texttt{worlds/} directory with
+\texttt{real\_time\_factor} set to \texttt{0} to saturate CPU.
 \texttt{3k\_shapes\_static.sdf} additionally has
-the \texttt{static} tag set to \texttt{true}
-on all 3004 models.
+\texttt{static} set to \texttt{true} on all 3004 models.
+Sensor worlds have companion \texttt{.topics} files listing topics for subscriber setup.
 
-\hypertarget{runtime-capture-command-per-world}{%
-\subsection{Runtime Capture Command (per
-world)}\label{runtime-capture-command-per-world}}
+\subsection{Running Captures}
 
-\begin{Shaded}
-\begin{Highlighting}[]
-\CommentTok{\# Launch headless}
-\ExtensionTok{\textasciitilde{}/rotary\_ws/install/libexec/gz/sim/gz{-}sim{-}main} \AttributeTok{{-}s} \AttributeTok{{-}r} \OperatorTok{\textless{}}\NormalTok{world.sdf}\OperatorTok{\textgreater{}} \KeywordTok{\&}
-\VariableTok{PID}\OperatorTok{=}\VariableTok{$!}\KeywordTok{;} \FunctionTok{sleep}\NormalTok{ 5}
+All captures are automated via the repository's scripts:
 
-\CommentTok{\# For sensor worlds: gz topic {-}e {-}t \textless{}topic\textgreater{} \textgreater{} /dev/null \&}
+\begin{verbatim}
+# Clone the repository
+git clone https://github.com/caguero/gz-profiling
+cd gz-profiling
 
-\CommentTok{\# Record 30s at 997 Hz}
-\ExtensionTok{perf}\NormalTok{ record }\AttributeTok{{-}F}\NormalTok{ 997 }\AttributeTok{{-}{-}call{-}graph}\NormalTok{ fp }\AttributeTok{{-}p} \VariableTok{$PID} \AttributeTok{{-}o}\NormalTok{ perf.data sleep 30}
-\BuiltInTok{kill} \VariableTok{$PID}
+# Capture all worlds (runtime + loading flamegraphs)
+./scripts/capture_all.sh worlds/
 
-\CommentTok{\# Generate flamegraph}
-\ExtensionTok{perf}\NormalTok{ script }\AttributeTok{{-}i}\NormalTok{ perf.data }\KeywordTok{|} \ExtensionTok{stackcollapse{-}perf.pl} \KeywordTok{|} \ExtensionTok{flamegraph.pl} \OperatorTok{\textgreater{}}\NormalTok{ flamegraph.svg}
-\end{Highlighting}
-\end{Shaded}
+# Single world runtime capture
+./scripts/gz_flamegraph.sh worlds/jetty.sdf jetty 30 headless
 
-\hypertarget{loading-capture-command-per-world}{%
-\subsection{Loading Capture Command (per
-world)}\label{loading-capture-command-per-world}}
+# Single world loading capture
+./scripts/gz_loading_flamegraph.sh worlds/jetty.sdf jetty
 
-\begin{Shaded}
-\begin{Highlighting}[]
-\ExtensionTok{perf}\NormalTok{ record }\AttributeTok{{-}F}\NormalTok{ 997 }\AttributeTok{{-}{-}call{-}graph}\NormalTok{ fp }\AttributeTok{{-}o}\NormalTok{ perf\_loading.data }\DataTypeTok{\textbackslash{}}
-  \AttributeTok{{-}{-}}\NormalTok{ gz{-}sim{-}main }\AttributeTok{{-}s} \AttributeTok{{-}r} \AttributeTok{{-}{-}iterations}\NormalTok{ 1 }\OperatorTok{\textless{}}\NormalTok{world.sdf}\OperatorTok{\textgreater{}}
-\end{Highlighting}
-\end{Shaded}
+# Cache-miss flamegraph
+./scripts/gz_cache_flamegraph.sh --runtime worlds/3k_shapes_static.sdf 3k_static
+
+# Analyze hotspots from .folded file
+./scripts/gz_hotspots.sh captures/runtime/3k_shapes_static.folded
+
+# CPU vs cache-miss comparison
+./scripts/gz_compare_cpu_cache.sh captures/runtime/3k_shapes_static.folded \
+  captures/cache/3k_static_rt_cachemiss.folded
+
+# Quick IPC / cache miss rate
+./scripts/gz_cache_stats.sh --pid $PID 10
+\end{verbatim}
 
 \subsection{Online Repository}
 
