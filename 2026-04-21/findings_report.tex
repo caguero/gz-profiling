@@ -238,7 +238,7 @@ overhead from physics engine cost --- the static variant of 3k\_shapes
 isolates ECS, transport, and scene management overhead by removing all
 DART/ODE work.
 
-The study follows two phases. The \textbf{discovery phase} uses CPU flamegraphs to identify where time goes across the full stack and prioritize optimization targets. The \textbf{validation phase} (Section~\ref{validating-optimizations}) defines a methodology for measuring the before/after impact of each optimization using \texttt{GZ\_PROFILE} (Remotery) instrumentation, which provides deterministic per-step timing for named code scopes.
+The study follows three phases. The \textbf{discovery phase} uses CPU flamegraphs to identify where time goes across the full stack and prioritize optimization targets. \textbf{CPU cache analysis} uses hardware performance counters (\texttt{perf stat}) to measure cache miss rates and Instructions Per Cycle (IPC), revealing whether hotspots are compute-bound or memory-bound. The \textbf{validation phase} (Section~\ref{validating-optimizations}) defines a methodology for measuring the before/after impact of each optimization using \texttt{GZ\_PROFILE} (Remotery) instrumentation, which provides deterministic per-step timing for named code scopes.
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 
@@ -317,6 +317,8 @@ gz-sim, gz-physics, gz-rendering, and gz-sensors.
 For the discovery phase (flamegraph captures in this study), \texttt{ENABLE\_PROFILER=OFF} is recommended. This eliminates the \textasciitilde1.5\% overhead from \texttt{\_rmt\_BeginCPUSample} calls and produces cleaner flamegraphs without Remotery frames cluttering the stacks.
 
 For the validation phase (measuring before/after impact of specific optimizations), \texttt{ENABLE\_PROFILER=ON} should be used. This activates the Remotery scopes that provide per-step timing for each named code block. See Section~\ref{validating-optimizations} for the recommended validation workflow.
+
+\textbf{CPU Cache Analysis} uses \texttt{perf stat} with hardware performance counters to measure cache miss rates and Instructions Per Cycle (IPC). While flamegraphs show \emph{where} time is spent, cache analysis reveals \emph{why} --- a function with high inclusive time and low IPC indicates a memory-bound bottleneck where the CPU is stalled waiting for data from RAM, not executing instructions. This distinguishes algorithmic inefficiency (doing too much work) from data structure inefficiency (doing work that thrashes the cache), and informs whether the fix should be ``do less'' or ``reorganize memory layout.''
 
 \hypertarget{benchmark-world-selection}{%
 \subsection{Benchmark World
@@ -1322,7 +1324,12 @@ In addition to flamegraph-based CPU sampling, hardware performance counters were
 \subsection{Runtime cache performance}
 
 {\footnotesize
-\begin{longtable}[]{@{}lrrrrl@{}}
+\begin{longtable}[]{@{}
+  p{0.22\textwidth}
+  >{\raggedleft\arraybackslash}p{0.13\textwidth}
+  >{\raggedleft\arraybackslash}p{0.13\textwidth}
+  >{\raggedleft\arraybackslash}p{0.08\textwidth}
+  p{0.34\textwidth}@{}}
 \toprule
 World & Cache miss & LLC miss & IPC & Assessment \\
 \midrule
@@ -1345,7 +1352,12 @@ This adds a second optimization lever beyond the algorithmic fixes in Section~7:
 \subsection{Loading cache performance}
 
 {\footnotesize
-\begin{longtable}[]{@{}lrrrl@{}}
+\begin{longtable}[]{@{}
+  p{0.22\textwidth}
+  >{\raggedleft\arraybackslash}p{0.13\textwidth}
+  >{\raggedleft\arraybackslash}p{0.13\textwidth}
+  >{\raggedleft\arraybackslash}p{0.08\textwidth}
+  p{0.34\textwidth}@{}}
 \toprule
 World & Load time & LLC misses & IPC & Assessment \\
 \midrule
