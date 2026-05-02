@@ -7,10 +7,12 @@ CPU flamegraph benchmarks for [Gazebo](https://gazebosim.org). Interactive flame
 ## Repository Structure
 
 ```
-scripts/                    # Reusable capture automation
-  gz_flamegraph.sh          # Runtime capture (30s steady-state)
+scripts/                    # Capture and analysis tools
+  gz_flamegraph.sh          # Runtime flamegraph capture
   gz_loading_flamegraph.sh  # Loading/startup capture (1 iteration)
   capture_all.sh            # Captures all worlds in a directory
+  gz_hotspots.sh            # Gazebo hotspot analysis from .folded
+  gz_cache_stats.sh         # CPU cache miss rate / IPC measurement
 worlds/                     # Benchmark world SDFs (all RTF=0)
   3k_shapes.sdf             # 3000 dynamic entities
   3k_shapes_static.sdf      # 3000 static entities
@@ -112,6 +114,37 @@ To add a new benchmark world:
 2. Set `<real_time_factor>0</real_time_factor>` in the `<physics>` element to run at maximum speed
 3. If it has rendering sensors, create a `.topics` companion file
 4. Run `capture_all.sh` pointing to your directory
+
+### Analyzing Hotspots
+
+After capturing, use `gz_hotspots.sh` to automatically identify Gazebo-owned optimization targets:
+
+```bash
+./scripts/gz_hotspots.sh 2026-04-21/runtime/3k_shapes_static.folded
+./scripts/gz_hotspots.sh 2026-04-21/runtime/jetty_headless.folded 20  # top 20
+```
+
+Outputs: optimization targets (inclusive time), attribution (which Gazebo function calls which external cost), external context, and a summary of how much CPU runs under Gazebo code.
+
+### CPU Cache Analysis
+
+Measure cache miss rates and Instructions Per Cycle (IPC) to determine if a workload is compute-bound or memory-bound:
+
+```bash
+# Measure a running simulation for 10 seconds
+./scripts/gz_cache_stats.sh --pid $PID 10
+
+# Measure loading performance
+./scripts/gz_cache_stats.sh --load worlds/3k_shapes_static.sdf
+
+# Measure all running simulations at once
+./scripts/gz_cache_stats.sh --all-runtime
+
+# Measure loading for all worlds
+./scripts/gz_cache_stats.sh --all-loading worlds/
+```
+
+IPC interpretation: 2-4 = healthy (compute-bound), 1-2 = moderate, <1 = memory-bound (CPU stalled on RAM).
 
 ### Environment Variables
 

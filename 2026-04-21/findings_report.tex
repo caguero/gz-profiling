@@ -488,14 +488,16 @@ profiling/
   scripts/
     gz_flamegraph.sh               # Runtime capture script
     gz_loading_flamegraph.sh       # Loading capture script
-    capture_all.sh                 # Orchestrates all captures
+    capture_all.sh                 # Captures all worlds in a directory
+    gz_hotspots.sh                 # Gazebo hotspot analysis from .folded
+    gz_cache_stats.sh              # CPU cache miss/IPC measurement
 \end{verbatim}
 
 \textbf{File types:}
 \begin{itemize}
 \tightlist
 \item \texttt{perf\_*.data} --- raw binary capture from \texttt{perf record}. Contains all stack samples. Can be re-analyzed with \texttt{perf report} or \texttt{perf script}. Large files; can be deleted once \texttt{.folded} files are generated.
-\item \texttt{*.folded} --- collapsed stack traces in text format (one line per unique stack, with sample count). Input for \texttt{flamegraph.pl}. Also useful for CLI analysis with \texttt{awk}/\texttt{sort}.
+\item \texttt{*.folded} --- collapsed stack traces in text format (one line per unique stack, with sample count). Input for \texttt{flamegraph.pl} and \texttt{gz\_hotspots.sh}.
 \item \texttt{*.svg} --- interactive flamegraph. Open in a web browser; click frames to zoom, Ctrl+F to search.
 \item \texttt{*\_wallclock.txt} --- wall-clock time for loading captures, recorded via the \texttt{time} command.
 \end{itemize}
@@ -518,10 +520,12 @@ The repository contains everything needed to reproduce the study:
 
 \begin{verbatim}
 gz-profiling/
-  scripts/                    # Reusable capture automation
-    gz_flamegraph.sh          #   Runtime capture (30s steady-state)
+  scripts/                    # Reusable capture and analysis
+    gz_flamegraph.sh          #   Runtime flamegraph capture
     gz_loading_flamegraph.sh  #   Loading/startup capture
     capture_all.sh            #   Captures all worlds in a directory
+    gz_hotspots.sh            #   Gazebo hotspot analysis from .folded
+    gz_cache_stats.sh         #   CPU cache miss/IPC measurement
   worlds/                     # Benchmark world SDFs (all RTF=0)
     3k_shapes.sdf             #   3000 dynamic entities
     3k_shapes_static.sdf      #   3000 static entities
@@ -532,9 +536,11 @@ gz-profiling/
     sensors_demo.sdf          #   6 rendering sensors
     sensors_demo.topics       #   Sensor topics for subscriber
   2026-04-21/                 # This benchmark run
-    runtime/                  #   Interactive runtime flamegraph SVGs
-    loading/                  #   Interactive loading flamegraph SVGs
+    runtime/                  #   Flamegraph SVGs + .folded files
+    loading/                  #   Loading flamegraph SVGs + .folded
     findings_report.pdf       #   This report
+    findings_report.tex       #   LaTeX source
+    figures/                  #   Thumbnails for the report
     index.html                #   Per-run index with links
   YYYY-MM-DD/                 # Future runs
 \end{verbatim}
