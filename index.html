@@ -24,6 +24,11 @@
   <table>
     <tr><th>Date</th><th>Description</th><th>Report</th></tr>
     <tr>
+      <td class="date"><a href="2026-07-03/">2026-07-03</a></td>
+      <td>Gazebo <strong>GUI</strong> process profiling on <strong>PR #3447</strong> (EnTT ECM). 4 worlds, NVIDIA RTX PRO 3000, sim playing. The render thread dominates (90-91&#37; on the 3k worlds); the per-frame <code>Ogre2Scene::PreRender</code> scene-graph walk is the bottleneck.</td>
+      <td><a href="2026-07-03/findings_report.pdf">PDF</a></td>
+    </tr>
+    <tr>
       <td class="date"><a href="2026-04-21/">2026-04-21</a></td>
       <td>Initial profiling study: 7 worlds (3k_shapes static/dynamic, sensors, jetty, gpu_lidar, sensors_demo). gz-sim 11.0.0-pre1, DART 6.13.2.</td>
       <td><a href="2026-04-21/findings_report.pdf">PDF</a></td>

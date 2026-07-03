@@ -348,6 +348,39 @@ Options:
 | `OUTPUT_DIR` | `./captures/runtime` or `./captures/loading` | Where to write output files |
 | `SCHED_THRESHOLD_MS` | `1.0` | Scheduler delay threshold for flagging threads (ms) |
 
+## GUI Profiling
+
+The scripts above profile the headless server (`gz-sim-main`). To profile the
+**GUI** process (`gz-sim-gui-client`) instead, use the GUI-specific tools. A
+server is launched to feed the GUI world state; `perf` attaches to the GUI
+process only. See the [`2026-07-03/`](2026-07-03/) run for a full example
+(GUI profiled on PR #3447 / EnTT ECM).
+
+```bash
+# Runtime: attach perf to the settled GUI process for 30s (server playing, gz sim -r)
+./scripts/gz_gui_flamegraph.sh worlds/3k_shapes.sdf 3k_shapes_dynamic 30 runtime
+
+# Loading: wrap the GUI launch (Qt init + render-engine init + initial scene build)
+./scripts/gz_gui_flamegraph.sh worlds/jetty.sdf jetty 20 loading
+
+# GUI-aware subsystem + hotspot breakdown (render pipeline, ECS sync, Qt, driver)
+./scripts/gz_gui_analyze.sh captures_gui/runtime/3k_shapes_dynamic.folded
+
+# Per-thread split (render thread vs Qt main vs transport)
+FLAMEGRAPH_DIR=~/FlameGraph OUTPUT_DIR=captures_gui/threads \
+  ./scripts/gz_per_thread_flamegraph.sh captures_gui/runtime/perf_3k_shapes_dynamic.data 3k_shapes_dynamic
+```
+
+Notes:
+
+- Uses `perf record -e task-clock` (not the default `cycles`) so hybrid P/E cores
+  are sampled uniformly; with `cycles`, `perf script` silently emits only one PMU.
+- To render on NVIDIA via PRIME offload, export
+  `__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia` before capturing.
+- The GUI spawns behind an `sh` launcher wrapper; the script selects the real GUI
+  process by thread count.
+- Output goes to `captures_gui/{runtime,loading,threads}/`.
+
 ## Output Files
 
 | Extension | Description |
