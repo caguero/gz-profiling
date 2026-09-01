@@ -1,0 +1,55 @@
+================================================================
+  GUI analysis: moving_robots_and_sensors   (total weight: 13244733845)
+================================================================
+
+-- 1. CPU by subsystem (leaf-frame classification) --
+    37.8%  other
+    13.9%  C++ alloc/refcount/memops
+     8.3%  [unknown]
+     7.1%  Ogre: scene-graph transforms
+     7.0%  GPU driver (Mesa/Intel)
+     5.5%  Ogre: culling/frustum
+     4.2%  Qt (core/gui)
+     3.5%  kernel/sync/idle
+     3.4%  Qt Quick scene-graph
+     3.1%  Ogre: forward+ lighting
+     3.0%  Ogre: other render
+     1.2%  gz-sim: ECM state sync
+     1.1%  gz-rendering: scene store/PreRender
+     0.3%  gz-transport
+     0.3%  gz-sim: RenderUtil/SceneManager
+     0.2%  gz-gui: render loop
+
+-- 2. Top 15 self-time leaves --
+    8.30%  [unknown]
+    6.73%  [libnvidia-glcore.so.580.159.03]
+    6.41%  _int_malloc
+    5.57%  Ogre::Node::updateFromParentImpl
+    3.06%  Ogre::ForwardClustered::collectLightForSlice
+    2.47%  _int_free
+    2.04%  Ogre::Frustum::updateFrustumPlanesImpl
+    1.52%  [libQt6Gui.so.6.4.2]
+    1.48%  __GI_____strtod_l_internal
+    1.32%  Ogre::Camera::isViewOutOfDate
+    1.20%  __GI___libc_malloc
+    1.15%  tcache_get_n
+    1.10%  __GI___libc_free
+    1.05%  google::protobuf::internal::TableEntryIsNonEmptyList
+    0.99%  std::num_get::_M_extract_float
+
+-- 3. Gazebo-owned functions by inclusive time (optimizable) --
+   27.69%  gz::sim::v11::GuiRunner::OnStateQt
+   26.85%  gz::gui::plugins::RenderThread::RenderNext
+   25.56%  gz::gui::plugins::RenderThreadRhiOpenGL::RenderNext
+   25.34%  gz::gui::plugins::GzRenderer::Render
+   23.78%  gz::rendering::v11::BaseCamera::Update
+   22.08%  gz::rendering::v11::Ogre2RenderTarget::Render
+   16.49%  gz::sim::v11::GuiRunner::UpdatePlugins
+   11.42%  gz::sim::v11::EntityComponentManager::SetState
+    7.50%  gz::sim::v11::GuiRunner::OnState
+    1.98%  gz::sim::v11::GzSceneManager::Update
+    1.35%  gz::sim::v11::RenderUtil::UpdateFromECM
+    1.34%  gz::rendering::v11::Ogre2Scene::PreRender
+    0.99%  gz::sim::v11::EntityComponentManager::SetChanged
+    0.98%  gz::rendering::v11::BaseScene::PreRender
+    0.95%  gz::sim::v11::GzSceneManager::eventFilter

@@ -9,6 +9,12 @@
 # Ogre render thread.
 #
 # Usage: ./gz_gui_flamegraph.sh <world_sdf> <label> [duration_s] [mode]
+#
+# In runtime mode, a <world>.topics file next to the SDF adds one gz topic
+# subscriber per line and an executable <world>.setup.sh is run once the GUI
+# is up (same conventions as gz_flamegraph.sh).
+# Environment: GZ_INSTALL (workspace install prefix), FLAMEGRAPH_DIR, OUTPUT_DIR,
+# STARTUP_WAIT.
 #   mode: runtime (default) — attach to a settled GUI and sample DURATION seconds
 #         loading           — sample the GUI from launch (Qt init + initial scene build)
 #
@@ -44,8 +50,9 @@ if [ "$(cat /proc/sys/kernel/perf_event_paranoid)" -gt 1 ]; then
   exit 1
 fi
 
-SERVER_PID=""; LAUNCH_PID=""; GUI_PID=""
+SERVER_PID=""; LAUNCH_PID=""; GUI_PID=""; SUB_PIDS=()
 cleanup() {
+  for p in "${SUB_PIDS[@]}"; do kill "$p" 2>/dev/null || true; done
   [ -n "$GUI_PID" ]    && kill "$GUI_PID"    2>/dev/null || true
   [ -n "$LAUNCH_PID" ] && kill "$LAUNCH_PID" 2>/dev/null || true
   [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
@@ -103,6 +110,26 @@ else
   fi
   echo "  GUI PID: $GUI_PID ($(ls /proc/$GUI_PID/task | wc -l) threads)"
 
+  # Sensor subscribers (<world>.topics) and per world setup script
+  # (<world>.setup.sh), same conventions as gz_flamegraph.sh, so the server
+  # side behaves like the headless benchmark while the GUI is profiled.
+  TOPICS_FILE="${WORLD%.sdf}.topics"
+  if [ -f "$TOPICS_FILE" ]; then
+    while IFS= read -r topic; do
+      [ -n "$topic" ] || continue
+      "$GZ_BIN" topic -e -t "$topic" > /dev/null 2>&1 &
+      SUB_PIDS+=($!)
+    done < "$TOPICS_FILE"
+    echo "  Subscribed to ${#SUB_PIDS[@]} sensor topics"
+    sleep 2
+  fi
+  SETUP_SCRIPT="${WORLD%.sdf}.setup.sh"
+  if [ -x "$SETUP_SCRIPT" ]; then
+    echo "  Running setup script: $SETUP_SCRIPT"
+    "$SETUP_SCRIPT" || echo "  WARNING: setup script failed" >&2
+    sleep 2
+  fi
+
   echo "[2/5] Recording GUI for ${DURATION}s @ 997Hz (--call-graph dwarf)..."
   perf record -e task-clock -F 997 --call-graph dwarf -p "$GUI_PID" \
     -o "$OUTPUT_DIR/perf_${LABEL}.data" sleep "$DURATION" 2>&1 | tail -2
@@ -119,7 +146,7 @@ perf script -i "$OUTPUT_DIR/perf_${LABEL}.data" 2>/dev/null \
 echo "[5/5] Rendering flamegraph SVG..."
 "$FLAMEGRAPH_DIR/flamegraph.pl" \
   --title "GUI: $LABEL" \
-  --subtitle "$(date '+%Y-%m-%d %H:%M') — ${DURATION}s @ 997Hz (gz-sim-gui, $MODE)" \
+  --subtitle "$(date '+%Y-%m-%d %H:%M'), ${DURATION}s @ 997Hz (gz-sim-gui, $MODE)" \
   "$OUTPUT_DIR/${LABEL}.folded" > "$OUTPUT_DIR/${LABEL}.svg"
 
 echo ""
@@ -128,6 +155,8 @@ echo "  SVG:    $OUTPUT_DIR/${LABEL}.svg"
 echo "  Folded: $OUTPUT_DIR/${LABEL}.folded"
 echo ""
 echo "=== Top 20 self-time leaves ==="
-awk '{ n=split($1,a,";"); printf "%s\t%d\n", a[n], $NF }' "$OUTPUT_DIR/${LABEL}.folded" \
+# (C++ symbols contain spaces: strip the trailing count and split on ";".
+#  "|| true" keeps a SIGPIPE from head aborting the script under pipefail.)
+awk '{ cnt=$NF; sub(/ [0-9]+$/, ""); n=split($0,a,";"); printf "%s\t%d\n", a[n], cnt }' "$OUTPUT_DIR/${LABEL}.folded" \
   | awk -F'\t' '{s[$1]+=$2} END {for(k in s) printf "%12d  %s\n",s[k],k}' \
-  | sort -rn | head -20
+  | sort -rn | head -20 || true

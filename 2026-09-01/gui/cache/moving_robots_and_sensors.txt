@@ -1,0 +1,18 @@
+============================================
+  Cache Stats: PID 952901 (10s sample)
+============================================
+
+
+ Performance counter stats for process id '952901':
+
+       486,607,627      cpu_core/cache-references/                                              (41.41%)
+         9,047,533      cpu_core/cache-misses/           #    1.86% of all cache refs           (41.41%)
+     5,807,417,175      cpu_core/L1-dcache-loads/                                               (41.41%)
+        60,284,287      cpu_core/L1-dcache-load-misses/  #    1.04% of all L1-dcache accesses   (41.41%)
+        38,582,542      cpu_core/LLC-loads/                                                     (41.40%)
+           673,543      cpu_core/LLC-load-misses/        #    1.75% of all LL-cache accesses    (41.40%)
+    23,736,768,410      cpu_core/instructions/           #    1.88  insn per cycle              (41.40%)
+    12,643,040,133      cpu_core/cycles/                                                        (41.40%)
+
+      10.011498947 seconds time elapsed
+

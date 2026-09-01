@@ -1,0 +1,18 @@
+============================================
+  Cache Stats: PID 952660 (10s sample)
+============================================
+
+
+ Performance counter stats for process id '952660':
+
+       656,622,217      cpu_core/cache-references/                                              (87.47%)
+       305,048,507      cpu_core/cache-misses/           #   46.46% of all cache refs           (87.46%)
+     9,917,636,165      cpu_core/L1-dcache-loads/                                               (87.47%)
+       217,441,150      cpu_core/L1-dcache-load-misses/  #    2.19% of all L1-dcache accesses   (87.47%)
+       107,886,162      cpu_core/LLC-loads/                                                     (87.47%)
+        46,341,722      cpu_core/LLC-load-misses/        #   42.95% of all LL-cache accesses    (87.47%)
+    34,330,051,980      cpu_core/instructions/           #    0.91  insn per cycle              (87.46%)
+    37,609,463,193      cpu_core/cycles/                                                        (87.46%)
+
+      10.014496799 seconds time elapsed
+

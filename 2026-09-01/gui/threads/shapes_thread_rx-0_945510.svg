@@ -1,0 +1,1431 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="1022" onload="init(evt)" viewBox="0 0 1200 1022" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="1022.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >shapes thread: rx-0-?/945510 (1.0%)</text>
+<text id="subtitle" x="600.00" y="48" >47141423 samples</text>
+<text id="details" x="10.00" y="1005" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="1005" > </text>
+<g id="frames">
+<g >
+<title>[unknown] (1,003,009 samples, 2.13%)</title><rect x="110.4" y="717" width="25.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="113.43" y="727.5" >[..</text>
+</g>
+<g >
+<title>withPayloadView&lt;gz::transport::v16::NodeShared::EnsureZenohSubscription (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="781" width="25.1" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1167.89" y="791.5" >w..</text>
+</g>
+<g >
+<title>QMetaObject::indexOfMethod (2,006,018 samples, 4.26%)</title><rect x="35.1" y="701" width="50.2" height="15.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="38.11" y="711.5" >QMeta..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::read_messages (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="893" width="25.1" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1167.89" y="903.5" >z..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="541" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="551.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="763.2" y="77" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="766.19" y="87.5" >[unkn..</text>
+</g>
+<g >
+<title>tokio::runtime::time::Driver::park_internal (11,033,099 samples, 23.40%)</title><rect x="135.5" y="829" width="276.2" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="138.53" y="839.5" >tokio::runtime::time::Driver::park_in..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="413" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="423.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="763.2" y="61" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="766.19" y="71.5" >[unkn..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="557" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="567.5" >[unknown]</text>
+</g>
+<g >
+<title>zenoh::net::routing::dispatcher::pubsub::route_data (5,015,045 samples, 10.64%)</title><rect x="863.6" y="749" width="125.5" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="866.62" y="759.5" >zenoh::net::rou..</text>
+</g>
+<g >
+<title>__GI___pthread_disable_asynccancel (2,006,018 samples, 4.26%)</title><rect x="336.4" y="781" width="50.2" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="339.38" y="791.5" >__GI_..</text>
+</g>
+<g >
+<title>QMetaMethod::invoke (1,003,009 samples, 2.13%)</title><rect x="10.0" y="701" width="25.1" height="15.0" fill="rgb(219,65,15)" rx="2" ry="2" />
+<text  x="13.00" y="711.5" >Q..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::run_task (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="909" width="25.1" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1142.79" y="919.5" >t..</text>
+</g>
+<g >
+<title>gz::transport::v16::ISubscriptionHandler::CreateMsgFromBuffer (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="733" width="25.1" height="15.0" fill="rgb(231,120,28)" rx="2" ry="2" />
+<text  x="1167.89" y="743.5" >g..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 2.13%)</title><rect x="110.4" y="701" width="25.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="113.43" y="711.5" >[..</text>
+</g>
+<g >
+<title>all (47,141,423 samples, 100%)</title><rect x="10.0" y="973" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="983.5" ></text>
+</g>
+<g >
+<title>std::_Function_handler&lt;std::shared_ptr&lt;google::protobuf::Message&gt;  (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="701" width="25.1" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="1167.89" y="711.5" >s..</text>
+</g>
+<g >
+<title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::compare (1,003,009 samples, 2.13%)</title><rect x="1014.3" y="621" width="25.1" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="1017.26" y="631.5" >s..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::TriggerCallbacks (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="717" width="25.1" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="1142.79" y="727.5" >g..</text>
+</g>
+<g >
+<title>syscall (2,006,018 samples, 4.26%)</title><rect x="85.3" y="813" width="50.2" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="88.32" y="823.5" >syscall</text>
+</g>
+<g >
+<title>std::__shared_count&lt; (1,003,009 samples, 2.13%)</title><rect x="1064.5" y="653" width="25.1" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="1067.47" y="663.5" >s..</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt;::operator= (1,003,009 samples, 2.13%)</title><rect x="989.1" y="669" width="25.2" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="992.15" y="679.5" >s..</text>
+</g>
+<g >
+<title>zenoh::net::routing::dispatcher::pubsub::route_data (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="765" width="50.2" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="1092.57" y="775.5" >zenoh..</text>
+</g>
+<g >
+<title>[unknown] (9,027,081 samples, 19.15%)</title><rect x="587.4" y="653" width="226.0" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="590.45" y="663.5" >[unknown]</text>
+</g>
+<g >
+<title>gz::msgs::WorldStatistics::_InternalParse (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="589" width="25.1" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1167.89" y="599.5" >g..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="509" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="519.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="738.1" y="173" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="741.09" y="183.5" >[unknown]</text>
+</g>
+<g >
+<title>gz::sim::v11::GuiRunner::OnState (3,009,027 samples, 6.38%)</title><rect x="10.0" y="749" width="75.3" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="13.00" y="759.5" >gz::sim:..</text>
+</g>
+<g >
+<title>std::_Sp_counted_base&lt; (1,003,009 samples, 2.13%)</title><rect x="1064.5" y="637" width="25.1" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="1067.47" y="647.5" >s..</text>
+</g>
+<g >
+<title>__libc_recv (10,030,090 samples, 21.28%)</title><rect x="562.3" y="749" width="251.1" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="565.34" y="759.5" >__libc_recv</text>
+</g>
+<g >
+<title>withPayloadView&lt;gz::transport::v16::NodeShared::EnsureZenohSubscription (3,009,027 samples, 6.38%)</title><rect x="10.0" y="829" width="75.3" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="13.00" y="839.5" >withPayl..</text>
+</g>
+<g >
+<title>z_loaned_bytes_t const* zenoh::interop::as_loaned_c_ptr&lt;z_owned_bytes_t, z_loaned_bytes_t, z_loaned_bytes_t&gt; (1,003,009 samples, 2.13%)</title><rect x="1114.7" y="653" width="25.1" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1117.68" y="663.5" >z..</text>
+</g>
+<g >
+<title>[unknown] (7,021,063 samples, 14.89%)</title><rect x="160.6" y="749" width="175.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="163.64" y="759.5" >[unknown]</text>
+</g>
+<g >
+<title>operator (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="765" width="25.1" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="1142.79" y="775.5" >o..</text>
+</g>
+<g >
+<title>_int_malloc (1,003,009 samples, 2.13%)</title><rect x="10.0" y="653" width="25.1" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="13.00" y="663.5" >_..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="253" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="263.5" >[unknown]</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::trigger_callback (4,012,036 samples, 8.51%)</title><rect x="989.1" y="829" width="100.5" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="992.15" y="839.5" >zenoh_transp..</text>
+</g>
+<g >
+<title>std::sys::thread::unix::Thread::new::thread_start (36,108,324 samples, 76.60%)</title><rect x="85.3" y="925" width="903.8" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="88.32" y="935.5" >std::sys::thread::unix::Thread::new::thread_start</text>
+</g>
+<g >
+<title>__libc_recv (10,030,090 samples, 21.28%)</title><rect x="562.3" y="765" width="251.1" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="565.34" y="775.5" >__libc_recv</text>
+</g>
+<g >
+<title>gz::transport::v16::HandlerStorage&lt;gz::transport::v16::ISubscriptionHandler&gt;::Handlers (2,006,018 samples, 4.26%)</title><rect x="989.1" y="717" width="50.3" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="992.15" y="727.5" >gz::t..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="477" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="487.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="411.7" y="781" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="414.70" y="791.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 12.77%)</title><rect x="185.7" y="701" width="150.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="188.74" y="711.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="845" width="50.2" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="1092.57" y="855.5" >tokio..</text>
+</g>
+<g >
+<title>&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="797" width="25.1" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1142.79" y="807.5" >&lt;..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::run (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="877" width="50.2" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="1092.57" y="887.5" >tokio..</text>
+</g>
+<g >
+<title>std::sys::backtrace::__rust_begin_short_backtrace (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="957" width="25.1" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="1142.79" y="967.5" >s..</text>
+</g>
+<g >
+<title>std::sys::thread::unix::Thread::new::thread_start (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="941" width="50.2" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="1092.57" y="951.5" >std::..</text>
+</g>
+<g >
+<title>std::char_traits&lt;char&gt;::compare (1,003,009 samples, 2.13%)</title><rect x="1014.3" y="605" width="25.1" height="15.0" fill="rgb(243,176,42)" rx="2" ry="2" />
+<text  x="1017.26" y="615.5" >s..</text>
+</g>
+<g >
+<title>google::protobuf::internal::EpsCopyInputStream::DoneWithCheck (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="557" width="25.1" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="1167.89" y="567.5" >g..</text>
+</g>
+<g >
+<title>__GI___pthread_enable_asynccancel (1,003,009 samples, 2.13%)</title><rect x="386.6" y="781" width="25.1" height="15.0" fill="rgb(240,165,39)" rx="2" ry="2" />
+<text  x="389.60" y="791.5" >_..</text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 12.77%)</title><rect x="185.7" y="717" width="150.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="188.74" y="727.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="749" width="50.2" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1092.57" y="759.5" >&lt;zeno..</text>
+</g>
+<g >
+<title>clone3 (36,108,324 samples, 76.60%)</title><rect x="85.3" y="957" width="903.8" height="15.0" fill="rgb(216,54,12)" rx="2" ry="2" />
+<text  x="88.32" y="967.5" >clone3</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="738.1" y="109" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="741.09" y="119.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="286.2" y="669" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="289.17" y="679.5" >[unkn..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="487.0" y="733" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="490.02" y="743.5" >[unkn..</text>
+</g>
+<g >
+<title>zenoh::Bytes::Reader::Reader (1,003,009 samples, 2.13%)</title><rect x="1114.7" y="669" width="25.1" height="15.0" fill="rgb(235,140,33)" rx="2" ry="2" />
+<text  x="1117.68" y="679.5" >z..</text>
+</g>
+<g >
+<title>[unknown] (9,027,081 samples, 19.15%)</title><rect x="587.4" y="685" width="226.0" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="590.45" y="695.5" >[unknown]</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::EnsureZenohSubscription (2,006,018 samples, 4.26%)</title><rect x="1039.4" y="717" width="50.2" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="1042.36" y="727.5" >gz::t..</text>
+</g>
+<g >
+<title>std::_Rb_tree_node&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt;* std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt;::_M_copy&lt;false, std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt;::_Reuse_or_alloc_node&gt; (1,003,009 samples, 2.13%)</title><rect x="989.1" y="653" width="25.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="992.15" y="663.5" >s..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 2.13%)</title><rect x="110.4" y="749" width="25.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="113.43" y="759.5" >[..</text>
+</g>
+<g >
+<title>zenoh_sync::lifo_queue::LifoQueue&lt;T&gt;::try_pull (2,006,018 samples, 4.26%)</title><rect x="813.4" y="797" width="50.2" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="816.40" y="807.5" >zenoh..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::trigger_callback (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="845" width="25.1" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="1142.79" y="855.5" >z..</text>
+</g>
+<g >
+<title>bool google::protobuf::internal::MergeFromImpl&lt;false&gt; (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="637" width="25.1" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="1167.89" y="647.5" >b..</text>
+</g>
+<g >
+<title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_construct (1,003,009 samples, 2.13%)</title><rect x="1089.6" y="669" width="25.1" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="1092.57" y="679.5" >s..</text>
+</g>
+<g >
+<title>google::protobuf::Message::GetTypeName[abi:cxx11] (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="685" width="25.1" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="1142.79" y="695.5" >g..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="317" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="327.5" >[unknown]</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::trigger_callback (5,015,045 samples, 10.64%)</title><rect x="863.6" y="781" width="125.5" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="866.62" y="791.5" >zenoh_transport..</text>
+</g>
+<g >
+<title>z_loan (1,003,009 samples, 2.13%)</title><rect x="1114.7" y="637" width="25.1" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="1117.68" y="647.5" >z..</text>
+</g>
+<g >
+<title>[unknown] (8,024,072 samples, 17.02%)</title><rect x="612.6" y="589" width="200.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="615.55" y="599.5" >[unknown]</text>
+</g>
+<g >
+<title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::basic_string&lt;std::allocator&lt;char&gt; &gt; (1,003,009 samples, 2.13%)</title><rect x="1089.6" y="685" width="25.1" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="1092.57" y="695.5" >s..</text>
+</g>
+<g >
+<title>std::__shared_ptr&lt;google::protobuf::Message,  (1,003,009 samples, 2.13%)</title><rect x="1064.5" y="669" width="25.1" height="15.0" fill="rgb(236,142,34)" rx="2" ry="2" />
+<text  x="1067.47" y="679.5" >s..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="487.0" y="653" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="490.02" y="663.5" >[unkn..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::park::Inner::park_condvar (2,006,018 samples, 4.26%)</title><rect x="85.3" y="829" width="50.2" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="88.32" y="839.5" >tokio..</text>
+</g>
+<g >
+<title>bool std::operator&lt; &lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; (1,003,009 samples, 2.13%)</title><rect x="1014.3" y="637" width="25.1" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="1017.26" y="647.5" >b..</text>
+</g>
+<g >
+<title>zenoh::net::routing::dispatcher::pubsub::route_data (3,009,027 samples, 6.38%)</title><rect x="10.0" y="893" width="75.3" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="13.00" y="903.5" >zenoh::n..</text>
+</g>
+<g >
+<title>std::function&lt;void  (3,009,027 samples, 6.38%)</title><rect x="10.0" y="765" width="75.3" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="13.00" y="775.5" >std::fun..</text>
+</g>
+<g >
+<title>std::shared_ptr&lt;google::protobuf::Message&gt;::~shared_ptr (1,003,009 samples, 2.13%)</title><rect x="1064.5" y="685" width="25.1" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="1067.47" y="695.5" >s..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="205" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="215.5" >[unknown]</text>
+</g>
+<g >
+<title>google::protobuf::internal::EpsCopyInputStream::DoneFallback (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="541" width="25.1" height="15.0" fill="rgb(231,120,28)" rx="2" ry="2" />
+<text  x="1167.89" y="551.5" >g..</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="411.7" y="813" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="414.70" y="823.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::handle_message (3,009,027 samples, 6.38%)</title><rect x="10.0" y="909" width="75.3" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="13.00" y="919.5" >&lt;zenoh::..</text>
+</g>
+<g >
+<title>__GI___libc_write (2,006,018 samples, 4.26%)</title><rect x="487.0" y="781" width="50.2" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="490.02" y="791.5" >__GI_..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="285" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="295.5" >[unknown]</text>
+</g>
+<g >
+<title>gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::TypeName[abi:cxx11] (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="701" width="25.1" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="1142.79" y="711.5" >g..</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="411.7" y="717" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="414.70" y="727.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="365" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="375.5" >[unknown]</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::CheckHandlerInfo (2,006,018 samples, 4.26%)</title><rect x="989.1" y="733" width="50.3" height="15.0" fill="rgb(223,83,20)" rx="2" ry="2" />
+<text  x="992.15" y="743.5" >gz::t..</text>
+</g>
+<g >
+<title>&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll (18,054,162 samples, 38.30%)</title><rect x="537.2" y="813" width="451.9" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="540.23" y="823.5" >&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::fu..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="445" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="455.5" >[unknown]</text>
+</g>
+<g >
+<title>__GI___libc_write (2,006,018 samples, 4.26%)</title><rect x="487.0" y="797" width="50.2" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="490.02" y="807.5" >__GI_..</text>
+</g>
+<g >
+<title>zenoh::Bytes::as_string[abi:cxx11] (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="701" width="50.2" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="1092.57" y="711.5" >zenoh..</text>
+</g>
+<g >
+<title>core::ops::function::FnOnce::call_once{{vtable.shim}} (4,012,036 samples, 8.51%)</title><rect x="989.1" y="957" width="100.5" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="992.15" y="967.5" >core::ops::f..</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="925" width="25.1" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="1167.89" y="935.5" >t..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStepMap::_InternalParse (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="621" width="25.1" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="1167.89" y="631.5" >g..</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="411.7" y="701" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="414.70" y="711.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::handle_message (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="861" width="25.1" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="1167.89" y="871.5" >&lt;..</text>
+</g>
+<g >
+<title>[unknown] (7,021,063 samples, 14.89%)</title><rect x="160.6" y="781" width="175.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="163.64" y="791.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="487.0" y="765" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="490.02" y="775.5" >[unkn..</text>
+</g>
+<g >
+<title>zenoh::api::handlers::callback::CallbackImpl::call_with_message (3,009,027 samples, 6.38%)</title><rect x="10.0" y="861" width="75.3" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="13.00" y="871.5" >zenoh::a..</text>
+</g>
+<g >
+<title>&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="829" width="50.2" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="1092.57" y="839.5" >&lt;toki..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="487.0" y="685" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="490.02" y="695.5" >[unkn..</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="411.7" y="749" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="414.70" y="759.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 2.13%)</title><rect x="311.3" y="637" width="25.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="314.28" y="647.5" >[..</text>
+</g>
+<g >
+<title>[unknown] (10,030,090 samples, 21.28%)</title><rect x="562.3" y="733" width="251.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="565.34" y="743.5" >[unknown]</text>
+</g>
+<g >
+<title>core::ops::function::FnOnce::call_once{{vtable.shim}} (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="925" width="50.2" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="1092.57" y="935.5" >core:..</text>
+</g>
+<g >
+<title>tokio::runtime::io::driver::Driver::turn (11,033,099 samples, 23.40%)</title><rect x="135.5" y="813" width="276.2" height="15.0" fill="rgb(212,33,8)" rx="2" ry="2" />
+<text  x="138.53" y="823.5" >tokio::runtime::io::driver::Driver::t..</text>
+</g>
+<g >
+<title>google::protobuf::internal::ParseContext::ParseMessage (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="605" width="25.1" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="1167.89" y="615.5" >g..</text>
+</g>
+<g >
+<title>start_thread (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="957" width="50.2" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="1092.57" y="967.5" >start..</text>
+</g>
+<g >
+<title>gz::transport::v16::HandlerStorage&lt;gz::transport::v16::ISubscriptionHandler&gt;::Handlers (1,003,009 samples, 2.13%)</title><rect x="989.1" y="701" width="25.2" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="992.15" y="711.5" >g..</text>
+</g>
+<g >
+<title>[libQt6Core.so.6.4.2] (1,003,009 samples, 2.13%)</title><rect x="60.2" y="653" width="25.1" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="63.21" y="663.5" >[..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="85.3" y="781" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="88.32" y="791.5" >[unkn..</text>
+</g>
+<g >
+<title>z_bytes_loan (1,003,009 samples, 2.13%)</title><rect x="1114.7" y="621" width="25.1" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="1117.68" y="631.5" >z..</text>
+</g>
+<g >
+<title>std::function&lt;std::shared_ptr&lt;google::protobuf::Message&gt;  (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="717" width="25.1" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="1167.89" y="727.5" >s..</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="893" width="25.1" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="1142.79" y="903.5" >t..</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="738.1" y="141" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="741.09" y="151.5" >[unknown]</text>
+</g>
+<g >
+<title>QMetaObject::invokeMethod (3,009,027 samples, 6.38%)</title><rect x="10.0" y="717" width="75.3" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="13.00" y="727.5" >QMetaObj..</text>
+</g>
+<g >
+<title>[unknown] (9,027,081 samples, 19.15%)</title><rect x="587.4" y="621" width="226.0" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="590.45" y="631.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::handle_message (4,012,036 samples, 8.51%)</title><rect x="989.1" y="813" width="100.5" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="992.15" y="823.5" >&lt;zenoh::net:..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::EnsureZenohSubscription (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="733" width="25.1" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="1142.79" y="743.5" >g..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::trigger_callback (3,009,027 samples, 6.38%)</title><rect x="10.0" y="925" width="75.3" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="13.00" y="935.5" >zenoh_tr..</text>
+</g>
+<g >
+<title>zenoh::api::handlers::callback::CallbackImpl::call_with_message (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="781" width="25.1" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="1142.79" y="791.5" >z..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="487.0" y="669" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="490.02" y="679.5" >[unkn..</text>
+</g>
+<g >
+<title>gz::transport::v16::SubscriptionHandler&lt;gz::msgs::WorldStatistics&gt;::RunLocalCallback (1,003,009 samples, 2.13%)</title><rect x="1039.4" y="685" width="25.1" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="1042.36" y="695.5" >g..</text>
+</g>
+<g >
+<title>[unknown] (9,027,081 samples, 19.15%)</title><rect x="587.4" y="637" width="226.0" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="590.45" y="647.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (7,021,063 samples, 14.89%)</title><rect x="160.6" y="733" width="175.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="163.64" y="743.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="269" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="279.5" >[unknown]</text>
+</g>
+<g >
+<title>std::sys::backtrace::__rust_begin_short_backtrace (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="909" width="50.2" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="1092.57" y="919.5" >std::..</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (4,012,036 samples, 8.51%)</title><rect x="989.1" y="877" width="100.5" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="992.15" y="887.5" >tokio::runti..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="85.3" y="797" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="88.32" y="807.5" >[unkn..</text>
+</g>
+<g >
+<title>zenoh::net::routing::dispatcher::pubsub::route_data (4,012,036 samples, 8.51%)</title><rect x="989.1" y="797" width="100.5" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="992.15" y="807.5" >zenoh::net::..</text>
+</g>
+<g >
+<title>zenoh::api::handlers::callback::CallbackImpl::call_with_message (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="813" width="25.1" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="1167.89" y="823.5" >z..</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (36,108,324 samples, 76.60%)</title><rect x="85.3" y="877" width="903.8" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="88.32" y="887.5" >tokio::runtime::task::raw::poll</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="738.1" y="157" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="741.09" y="167.5" >[unknown]</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStepMap::GetMetadata (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="669" width="25.1" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
+<text  x="1142.79" y="679.5" >g..</text>
+</g>
+<g >
+<title>operator (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="797" width="25.1" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="1167.89" y="807.5" >o..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="487.0" y="701" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="490.02" y="711.5" >[unkn..</text>
+</g>
+<g >
+<title>start_thread (36,108,324 samples, 76.60%)</title><rect x="85.3" y="941" width="903.8" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="88.32" y="951.5" >start_thread</text>
+</g>
+<g >
+<title>QByteArray::isNull (1,003,009 samples, 2.13%)</title><rect x="60.2" y="637" width="25.1" height="15.0" fill="rgb(253,225,53)" rx="2" ry="2" />
+<text  x="63.21" y="647.5" >Q..</text>
+</g>
+<g >
+<title>operator (3,009,027 samples, 6.38%)</title><rect x="10.0" y="845" width="75.3" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="13.00" y="855.5" >operator</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::read_messages (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="861" width="25.1" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1142.79" y="871.5" >z..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::run_task (23,069,207 samples, 48.94%)</title><rect x="411.7" y="845" width="577.4" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="414.70" y="855.5" >tokio::runtime::scheduler::multi_thread::worker::Context::run_task</text>
+</g>
+<g >
+<title>std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt;::operator= (1,003,009 samples, 2.13%)</title><rect x="989.1" y="685" width="25.2" height="15.0" fill="rgb(220,70,16)" rx="2" ry="2" />
+<text  x="992.15" y="695.5" >s..</text>
+</g>
+<g >
+<title>&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll (3,009,027 samples, 6.38%)</title><rect x="10.0" y="957" width="75.3" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="13.00" y="967.5" >&lt;tokio_u..</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (4,012,036 samples, 8.51%)</title><rect x="989.1" y="925" width="100.5" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="992.15" y="935.5" >tokio::runti..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 2.13%)</title><rect x="311.3" y="621" width="25.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="314.28" y="631.5" >[..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="487.0" y="717" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="490.02" y="727.5" >[unkn..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="429" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="439.5" >[unknown]</text>
+</g>
+<g >
+<title>zenoh::detail::closures::Closure&lt;gz::transport::v16::NodeShared::EnsureZenohSubscription (1,003,009 samples, 2.13%)</title><rect x="964.0" y="701" width="25.1" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="967.04" y="711.5" >z..</text>
+</g>
+<g >
+<title>[unknown] (7,021,063 samples, 14.89%)</title><rect x="637.7" y="573" width="175.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="640.66" y="583.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push (3,009,027 samples, 6.38%)</title><rect x="10.0" y="877" width="75.3" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="13.00" y="887.5" >&lt;zenoh::..</text>
+</g>
+<g >
+<title>withPayloadView&lt;gz::transport::v16::NodeShared::EnsureZenohSubscription (2,006,018 samples, 4.26%)</title><rect x="1039.4" y="733" width="50.2" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1042.36" y="743.5" >withP..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="381" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="391.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::run (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="925" width="25.1" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="1142.79" y="935.5" >t..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="763.2" y="93" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="766.19" y="103.5" >[unkn..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::run_task (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="941" width="25.1" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1167.89" y="951.5" >t..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="397" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="407.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="487.0" y="749" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="490.02" y="759.5" >[unkn..</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="411.7" y="685" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="414.70" y="695.5" >[unknown]</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::TriggerCallbacks (2,006,018 samples, 4.26%)</title><rect x="1039.4" y="701" width="50.2" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="1042.36" y="711.5" >gz::t..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::trigger_callback (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="797" width="50.2" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="1092.57" y="807.5" >zenoh..</text>
+</g>
+<g >
+<title>core::ptr::drop_in_place&lt;zenoh::api::sample::Sample&gt; (2,006,018 samples, 4.26%)</title><rect x="913.8" y="701" width="50.2" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="916.83" y="711.5" >core:..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::run (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="957" width="25.1" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="1167.89" y="967.5" >t..</text>
+</g>
+<g >
+<title>std::_Rb_tree_node&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt;* std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt;::_M_copy&lt;false, std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt;::_Reuse_or_alloc_node&gt; (1,003,009 samples, 2.13%)</title><rect x="989.1" y="637" width="25.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="992.15" y="647.5" >s..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="333" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="343.5" >[unknown]</text>
+</g>
+<g >
+<title>operator new (1,003,009 samples, 2.13%)</title><rect x="1089.6" y="653" width="25.1" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1092.57" y="663.5" >o..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 2.13%)</title><rect x="110.4" y="733" width="25.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="113.43" y="743.5" >[..</text>
+</g>
+<g >
+<title>&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="829" width="25.1" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1167.89" y="839.5" >&lt;..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="189" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="199.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="411.7" y="765" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="414.70" y="775.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="237" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="247.5" >[unknown]</text>
+</g>
+<g >
+<title>qMetaTypeTypeInternal (2,006,018 samples, 4.26%)</title><rect x="35.1" y="669" width="50.2" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="38.11" y="679.5" >qMeta..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="349" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="359.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="493" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="503.5" >[unknown]</text>
+</g>
+<g >
+<title>[libQt6Core.so.6.4.2] (2,006,018 samples, 4.26%)</title><rect x="35.1" y="685" width="50.2" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="38.11" y="695.5" >[libQ..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="221" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="231.5" >[unknown]</text>
+</g>
+<g >
+<title>std::sys::backtrace::__rust_begin_short_backtrace (36,108,324 samples, 76.60%)</title><rect x="85.3" y="893" width="903.8" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="88.32" y="903.5" >std::sys::backtrace::__rust_begin_short_backtrace</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::read_messages (4,012,036 samples, 8.51%)</title><rect x="989.1" y="845" width="100.5" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="992.15" y="855.5" >zenoh_transp..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="301" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="311.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::park_internal (13,039,117 samples, 27.66%)</title><rect x="85.3" y="845" width="326.4" height="15.0" fill="rgb(208,15,3)" rx="2" ry="2" />
+<text  x="88.32" y="855.5" >tokio::runtime::scheduler::multi_thread::wor..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::TriggerCallbacks (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="749" width="25.1" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="1167.89" y="759.5" >g..</text>
+</g>
+<g >
+<title>[unknown] (10,030,090 samples, 21.28%)</title><rect x="562.3" y="701" width="251.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="565.34" y="711.5" >[unknown]</text>
+</g>
+<g >
+<title>std::shared_ptr&lt;google::protobuf::Message&gt; std::__invoke_impl&lt;std::shared_ptr&lt;google::protobuf::Message&gt;, gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::SubscriptionHandler (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="669" width="25.1" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="1167.89" y="679.5" >s..</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (18,054,162 samples, 38.30%)</title><rect x="537.2" y="829" width="451.9" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="540.23" y="839.5" >tokio::runtime::task::raw::poll</text>
+</g>
+<g >
+<title>[unknown] (10,030,090 samples, 21.28%)</title><rect x="562.3" y="717" width="251.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="565.34" y="727.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="909" width="25.1" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="1167.89" y="919.5" >&lt;..</text>
+</g>
+<g >
+<title>__GI___libc_malloc (1,003,009 samples, 2.13%)</title><rect x="10.0" y="669" width="25.1" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="13.00" y="679.5" >_..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::trigger_callback (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="877" width="25.1" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="1167.89" y="887.5" >z..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::EnsureZenohSubscription (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="717" width="50.2" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="1092.57" y="727.5" >gz::t..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::EnsureZenohSubscription (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="765" width="25.1" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="1167.89" y="775.5" >g..</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt;::find (1,003,009 samples, 2.13%)</title><rect x="1014.3" y="685" width="25.1" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="1017.26" y="695.5" >s..</text>
+</g>
+<g >
+<title>[unknown] (7,021,063 samples, 14.89%)</title><rect x="160.6" y="765" width="175.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="163.64" y="775.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="893" width="50.2" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="1092.57" y="903.5" >tokio..</text>
+</g>
+<g >
+<title>zenoh::api::handlers::callback::CallbackImpl::call_with_message (3,009,027 samples, 6.38%)</title><rect x="913.8" y="717" width="75.3" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="916.83" y="727.5" >zenoh::a..</text>
+</g>
+<g >
+<title>epoll_wait (10,030,090 samples, 21.28%)</title><rect x="160.6" y="797" width="251.1" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="163.64" y="807.5" >epoll_wait</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::read_messages (3,009,027 samples, 6.38%)</title><rect x="10.0" y="941" width="75.3" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="13.00" y="951.5" >zenoh_tr..</text>
+</g>
+<g >
+<title>operator (2,006,018 samples, 4.26%)</title><rect x="1039.4" y="749" width="50.2" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="1042.36" y="759.5" >opera..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::park::Unparker::unpark (2,006,018 samples, 4.26%)</title><rect x="487.0" y="829" width="50.2" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="490.02" y="839.5" >tokio..</text>
+</g>
+<g >
+<title>zenoh::net::routing::dispatcher::pubsub::route_data (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="845" width="25.1" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="1167.89" y="855.5" >z..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="236.0" y="685" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="238.96" y="695.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::run (4,012,036 samples, 8.51%)</title><rect x="989.1" y="909" width="100.5" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="992.15" y="919.5" >tokio::runti..</text>
+</g>
+<g >
+<title>[unknown] (9,027,081 samples, 19.15%)</title><rect x="587.4" y="669" width="226.0" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="590.45" y="679.5" >[unknown]</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::TriggerCallbacks (3,009,027 samples, 6.38%)</title><rect x="10.0" y="797" width="75.3" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="13.00" y="807.5" >gz::tran..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="461" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="471.5" >[unknown]</text>
+</g>
+<g >
+<title>gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::RunLocalCallback (3,009,027 samples, 6.38%)</title><rect x="10.0" y="781" width="75.3" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="13.00" y="791.5" >gz::tran..</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="411.7" y="797" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="414.70" y="807.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push (4,012,036 samples, 8.51%)</title><rect x="989.1" y="781" width="100.5" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="992.15" y="791.5" >&lt;zenoh::api:..</text>
+</g>
+<g >
+<title>&lt;tokio::net::tcp::stream::TcpStream as tokio::io::async_read::AsyncRead&gt;::poll_read (10,030,090 samples, 21.28%)</title><rect x="562.3" y="781" width="251.1" height="15.0" fill="rgb(212,33,8)" rx="2" ry="2" />
+<text  x="565.34" y="791.5" >&lt;tokio::net::tcp::stream::TcpStre..</text>
+</g>
+<g >
+<title>withPayloadView&lt;gz::transport::v16::NodeShared::EnsureZenohSubscription (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="749" width="25.1" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1142.79" y="759.5" >w..</text>
+</g>
+<g >
+<title>std::enable_if&lt;is_invocable_r_v&lt;std::shared_ptr&lt;google::protobuf::Message&gt;, gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::SubscriptionHandler (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="685" width="25.1" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="1167.89" y="695.5" >s..</text>
+</g>
+<g >
+<title>&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::handle_message (5,015,045 samples, 10.64%)</title><rect x="863.6" y="765" width="125.5" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="866.62" y="775.5" >&lt;zenoh::net::pr..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::run (36,108,324 samples, 76.60%)</title><rect x="85.3" y="861" width="903.8" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="88.32" y="871.5" >tokio::runtime::scheduler::multi_thread::worker::run</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="941" width="25.1" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="1142.79" y="951.5" >t..</text>
+</g>
+<g >
+<title>std::sys::backtrace::__rust_begin_short_backtrace (4,012,036 samples, 8.51%)</title><rect x="989.1" y="941" width="100.5" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="992.15" y="951.5" >std::sys::ba..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::run_task (4,012,036 samples, 8.51%)</title><rect x="989.1" y="893" width="100.5" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="992.15" y="903.5" >tokio::runti..</text>
+</g>
+<g >
+<title>zenoh::net::routing::dispatcher::pubsub::route_data (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="813" width="25.1" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="1142.79" y="823.5" >z..</text>
+</g>
+<g >
+<title>&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push (3,009,027 samples, 6.38%)</title><rect x="913.8" y="733" width="75.3" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="916.83" y="743.5" >&lt;zenoh::..</text>
+</g>
+<g >
+<title>mio::sys::unix::waker::Waker::wake (2,006,018 samples, 4.26%)</title><rect x="487.0" y="813" width="50.2" height="15.0" fill="rgb(246,192,46)" rx="2" ry="2" />
+<text  x="490.02" y="823.5" >mio::..</text>
+</g>
+<g >
+<title>zenoh::Bytes::reader (1,003,009 samples, 2.13%)</title><rect x="1114.7" y="685" width="25.1" height="15.0" fill="rgb(221,77,18)" rx="2" ry="2" />
+<text  x="1117.68" y="695.5" >z..</text>
+</g>
+<g >
+<title>core::ops::function::FnOnce::call_once{{vtable.shim}} (36,108,324 samples, 76.60%)</title><rect x="85.3" y="909" width="903.8" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="88.32" y="919.5" >core::ops::function::FnOnce::call_once{{vtable.shim}}</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::read_messages (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="813" width="50.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1092.57" y="823.5" >zenoh..</text>
+</g>
+<g >
+<title>&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::handle_message (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="781" width="50.2" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="1092.57" y="791.5" >&lt;zeno..</text>
+</g>
+<g >
+<title>QMetaObject::invokeMethod (3,009,027 samples, 6.38%)</title><rect x="10.0" y="733" width="75.3" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="13.00" y="743.5" >QMetaObj..</text>
+</g>
+<g >
+<title>operator new (1,003,009 samples, 2.13%)</title><rect x="10.0" y="685" width="25.1" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="13.00" y="695.5" >o..</text>
+</g>
+<g >
+<title>std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;::operator (1,003,009 samples, 2.13%)</title><rect x="1014.3" y="653" width="25.1" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1017.26" y="663.5" >s..</text>
+</g>
+<g >
+<title>&lt;zenoh_link_tcp::unicast::LinkUnicastTcp as zenoh_link_commons::unicast::LinkUnicastTrait&gt;::read_exact::{{closure}} (11,033,099 samples, 23.40%)</title><rect x="537.2" y="797" width="276.2" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="540.23" y="807.5" >&lt;zenoh_link_tcp::unicast::LinkUnicast..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::EnsureZenohSubscription (3,009,027 samples, 6.38%)</title><rect x="10.0" y="813" width="75.3" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="13.00" y="823.5" >gz::tran..</text>
+</g>
+<g >
+<title>std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt;::find (1,003,009 samples, 2.13%)</title><rect x="1014.3" y="701" width="25.1" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="1017.26" y="711.5" >s..</text>
+</g>
+<g >
+<title>gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::SubscriptionHandler (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="653" width="25.1" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="1167.89" y="663.5" >g..</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, std::shared_ptr&lt;gz::transport::v16::ISubscriptionHandler&gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt; &gt;::_M_lower_bound (1,003,009 samples, 2.13%)</title><rect x="1014.3" y="669" width="25.1" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="1017.26" y="679.5" >s..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 8.51%)</title><rect x="713.0" y="525" width="100.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="715.98" y="535.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 2.13%)</title><rect x="311.3" y="653" width="25.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="314.28" y="663.5" >[..</text>
+</g>
+<g >
+<title>&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::handle_message (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="829" width="25.1" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="1142.79" y="839.5" >&lt;..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::run_task (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="861" width="50.2" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1092.57" y="871.5" >tokio..</text>
+</g>
+<g >
+<title>zenoh::api::handlers::callback::CallbackImpl::call_with_message (2,006,018 samples, 4.26%)</title><rect x="1089.6" y="733" width="50.2" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="1092.57" y="743.5" >zenoh..</text>
+</g>
+<g >
+<title>[unknown] (8,024,072 samples, 17.02%)</title><rect x="612.6" y="605" width="200.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="615.55" y="615.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll (1,003,009 samples, 2.13%)</title><rect x="1139.8" y="877" width="25.1" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="1142.79" y="887.5" >&lt;..</text>
+</g>
+<g >
+<title>&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll (4,012,036 samples, 8.51%)</title><rect x="989.1" y="861" width="100.5" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="992.15" y="871.5" >&lt;tokio_util:..</text>
+</g>
+<g >
+<title>zenoh::api::handlers::callback::CallbackImpl::call_with_message (4,012,036 samples, 8.51%)</title><rect x="989.1" y="765" width="100.5" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="992.15" y="775.5" >zenoh::api::..</text>
+</g>
+<g >
+<title>syscall (3,009,027 samples, 6.38%)</title><rect x="411.7" y="829" width="75.3" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="414.70" y="839.5" >syscall</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="738.1" y="125" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="741.09" y="135.5" >[unknown]</text>
+</g>
+<g >
+<title>google::protobuf::internal::ParseContext::Done (1,003,009 samples, 2.13%)</title><rect x="1164.9" y="573" width="25.1" height="15.0" fill="rgb(216,54,12)" rx="2" ry="2" />
+<text  x="1167.89" y="583.5" >g..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::read_messages (5,015,045 samples, 10.64%)</title><rect x="863.6" y="797" width="125.5" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="866.62" y="807.5" >zenoh_transport..</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 6.38%)</title><rect x="411.7" y="733" width="75.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="414.70" y="743.5" >[unknown]</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::EnsureZenohSubscription (2,006,018 samples, 4.26%)</title><rect x="989.1" y="749" width="50.3" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="992.15" y="759.5" >gz::t..</text>
+</g>
+<g >
+<title>__memcmp_avx2_movbe (1,003,009 samples, 2.13%)</title><rect x="1014.3" y="589" width="25.1" height="15.0" fill="rgb(224,91,21)" rx="2" ry="2" />
+<text  x="1017.26" y="599.5" >_..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 4.26%)</title><rect x="85.3" y="765" width="50.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="88.32" y="775.5" >[unkn..</text>
+</g>
+</g>
+</svg>

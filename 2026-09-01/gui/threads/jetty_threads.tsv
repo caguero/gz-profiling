@@ -1,0 +1,16 @@
+# Per-thread analysis: jetty
+# Source: captures_gui/runtime/perf_jetty.data
+# Total samples: 14636910337
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz::gui::plugin/946887	10997993685	75.1	Ogre::ForwardClustered::collectLightForSlice	12.8
+gz-sim-gui-clie/946797	1519558635	10.3	malloc_consolidate	5.4
+QSGRenderThread/946882	1182547611	8.0	[libnvidia-glcore.so.580.159.03]	32.6
+rx-1/946811	426278825	2.9	[unknown]	20.2
+rx-0/946809	258776322	1.7	[unknown]	19.0
+net-0/946802	113340017	.7	[unknown]	50.4
+QXcbEventQueue/946825	80240720	.5	[unknown]	81.2
+gz-sim-gui-clie/946886	37111333	.2	[unknown]	56.8
+gz-sim-gui-clie/946820	12036108	0	[unknown]	33.3
+Watchdog_Confir/946866	5015045	0	syscall	40.0
+QSGRenderThread/946884	2006018	0	[unknown]	100.0
+gz::gui::plugin/946896	2006018	0	[unknown]	50.0

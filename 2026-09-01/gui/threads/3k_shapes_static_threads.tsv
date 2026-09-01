@@ -1,0 +1,15 @@
+# Per-thread analysis: 3k_shapes_static
+# Source: captures_gui/runtime/perf_3k_shapes_static.data
+# Total samples: 31338013196
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz::gui::plugin/946004	27852556921	88.8	gz::rendering::v11::Ogre2Node::Children	9.6
+gz-sim-gui-clie/945921	1824473371	5.8	operator	20.0
+QSGRenderThread/945999	1305917718	4.1	[libnvidia-glcore.so.580.159.03]	33.6
+rx-2/945936	99297891	.3	[unknown]	26.3
+rx-1/945934	97291873	.3	[unknown]	27.8
+QXcbEventQueue/945949	76228684	.2	[unknown]	77.6
+net-0/945926	28084252	0	[unknown]	57.1
+gz-sim-gui-clie/946003	25075225	0	[unknown]	56.0
+gz-sim-gui-clie/945944	18054162	0	[unknown]	22.2
+Watchdog_Confir/946009	8024072	0	[unknown]	25.0
+gz::gui::plugin/946005	3009027	0	[unknown]	66.7

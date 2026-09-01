@@ -1,0 +1,17 @@
+# Per-thread analysis: 3k_shapes_dynamic
+# Source: captures_gui/runtime/perf_3k_shapes_dynamic.data
+# Total samples: 24409227024
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz::gui::plugin/946413	21375124799	87.5	gz::rendering::v11::Ogre2Node::Children	10.3
+gz-sim-gui-clie/946330	1619859535	6.6	_int_malloc	16.0
+QSGRenderThread/946408	1123370080	4.6	[libnvidia-glcore.so.580.159.03]	28.7
+rx-0/946345	141424269	.5	malloc_consolidate	18.4
+QXcbEventQueue/946358	70210630	.2	[unknown]	67.1
+rx-2/946348	27081243	.1	malloc_consolidate	37.0
+gz-sim-gui-clie/946412	23069207	0	[unknown]	56.5
+gz-sim-gui-clie/946353	12036108	0	[unknown]	25.0
+net-0/946335	6018054	0	[unknown]	33.3
+Watchdog_Confir/946418	4012036	0	[unknown]	100.0
+QSGRenderThread/946410	3009027	0	__GI___clock_gettime	33.3
+gz::gui::plugin/946414	3009027	0	[unknown]	66.7
+tx-0/946339	1003009	0	[unknown]	100.0

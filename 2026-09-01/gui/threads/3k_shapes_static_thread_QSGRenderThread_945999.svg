@@ -1,0 +1,3299 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="910" onload="init(evt)" viewBox="0 0 1200 910" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="910.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >3k_shapes_static thread: QSGRenderThread-?/945999 (4.1%)</text>
+<text id="subtitle" x="600.00" y="48" >1305917718 samples</text>
+<text id="details" x="10.00" y="893" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="893" > </text>
+<g id="frames">
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="539.3" y="621" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="542.28" y="631.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="528.4" y="589" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="531.40" y="599.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1028.7" y="541" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1031.68" y="551.5" ></text>
+</g>
+<g >
+<title>[unknown] (25,075,225 samples, 1.92%)</title><rect x="1137.4" y="525" width="22.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1140.43" y="535.5" >[..</text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="1098.5" y="653" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1101.46" y="663.5" ></text>
+</g>
+<g >
+<title>clone3 (1,215,646,908 samples, 93.09%)</title><rect x="91.6" y="845" width="1098.4" height="15.0" fill="rgb(216,54,12)" rx="2" ry="2" />
+<text  x="94.57" y="855.5" >clone3</text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="90.7" y="701" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="93.66" y="711.5" ></text>
+</g>
+<g >
+<title>__GI___libc_free (1,003,009 samples, 0.08%)</title><rect x="448.6" y="637" width="1.0" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="451.65" y="647.5" ></text>
+</g>
+<g >
+<title>QSGNode::markDirty (2,006,018 samples, 0.15%)</title><rect x="15.4" y="797" width="1.9" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="18.44" y="807.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="953.5" y="573" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="956.46" y="583.5" ></text>
+</g>
+<g >
+<title>QRhiCommandBuffer::debugMarkEnd (1,003,009 samples, 0.08%)</title><rect x="401.5" y="717" width="0.9" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="404.52" y="727.5" ></text>
+</g>
+<g >
+<title>QSGNode::markDirty (2,006,018 samples, 0.15%)</title><rect x="532.9" y="733" width="1.8" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="535.93" y="743.5" ></text>
+</g>
+<g >
+<title>QQuickTextNode::deleteContent (10,030,090 samples, 0.77%)</title><rect x="559.2" y="717" width="9.1" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="562.22" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="99.7" y="685" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="102.72" y="695.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="90.7" y="765" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="93.66" y="775.5" ></text>
+</g>
+<g >
+<title>QQuickTextPrivate::lineHeightOffset (5,015,045 samples, 0.38%)</title><rect x="569.2" y="717" width="4.5" height="15.0" fill="rgb(216,54,13)" rx="2" ry="2" />
+<text  x="572.19" y="727.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (409,227,672 samples, 31.34%)</title><rect x="671.6" y="717" width="369.8" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="674.60" y="727.5" >[libnvidia-glcore.so.580.159.03]</text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (32,096,288 samples, 2.46%)</title><rect x="129.6" y="685" width="29.0" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="695.5" >QS..</text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="139.6" y="93" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="142.60" y="103.5" ></text>
+</g>
+<g >
+<title>QNativeInterface::QSGOpenGLTexture::fromNative (9,027,081 samples, 0.69%)</title><rect x="542.0" y="701" width="8.2" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="545.00" y="711.5" ></text>
+</g>
+<g >
+<title>__futex_abstimed_wait_common (2,006,018 samples, 0.15%)</title><rect x="528.4" y="669" width="1.8" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="531.40" y="679.5" ></text>
+</g>
+<g >
+<title>[unknown] (9,027,081 samples, 0.69%)</title><rect x="1087.6" y="445" width="8.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1090.59" y="455.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (7,021,063 samples, 0.54%)</title><rect x="137.8" y="189" width="6.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="140.79" y="199.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="953.5" y="509" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="956.46" y="519.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1084.9" y="541" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1087.87" y="551.5" ></text>
+</g>
+<g >
+<title>QFontEngineMulti::descent (1,003,009 samples, 0.08%)</title><rect x="569.2" y="685" width="0.9" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="572.19" y="695.5" ></text>
+</g>
+<g >
+<title>QSGDefaultInternalImageNode::updateMaterialBlending (3,009,027 samples, 0.23%)</title><rect x="474.9" y="717" width="2.7" height="15.0" fill="rgb(215,48,11)" rx="2" ry="2" />
+<text  x="477.93" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (11,033,099 samples, 0.84%)</title><rect x="1085.8" y="541" width="9.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1088.78" y="551.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="948.0" y="525" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="951.02" y="535.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="605" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="615.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_lock (1,003,009 samples, 0.08%)</title><rect x="1172.8" y="653" width="0.9" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="1175.78" y="663.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (10,030,090 samples, 0.77%)</title><rect x="559.2" y="701" width="9.1" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="562.22" y="711.5" ></text>
+</g>
+<g >
+<title>gz::gui::plugins::RenderSync::WaitForWorkerThread (3,009,027 samples, 0.23%)</title><rect x="530.2" y="685" width="2.7" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="533.22" y="695.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="152.3" y="493" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="155.29" y="503.5" ></text>
+</g>
+<g >
+<title>_int_free (1,003,009 samples, 0.08%)</title><rect x="924.5" y="605" width="0.9" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="927.45" y="615.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="68.9" y="749" width="2.7" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="71.91" y="759.5" ></text>
+</g>
+<g >
+<title>QColor::blueF (1,003,009 samples, 0.08%)</title><rect x="20.0" y="765" width="0.9" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="22.97" y="775.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (8,024,072 samples, 0.61%)</title><rect x="457.7" y="701" width="7.3" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="460.71" y="711.5" ></text>
+</g>
+<g >
+<title>[libqxcb-glx-integration.so] (3,009,027 samples, 0.23%)</title><rect x="68.9" y="797" width="2.7" height="15.0" fill="rgb(237,147,35)" rx="2" ry="2" />
+<text  x="71.91" y="807.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (36,108,324 samples, 2.76%)</title><rect x="35.4" y="685" width="32.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="38.38" y="695.5" >[l..</text>
+</g>
+<g >
+<title>___pthread_mutex_unlock (39,117,351 samples, 3.00%)</title><rect x="995.1" y="701" width="35.4" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="998.15" y="711.5" >__..</text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (6,018,054 samples, 0.46%)</title><rect x="232.9" y="685" width="5.5" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="235.95" y="695.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="68.9" y="781" width="2.7" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="71.91" y="791.5" ></text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1042.3" y="605" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1045.27" y="615.5" ></text>
+</g>
+<g >
+<title>QRhiScissor::QRhiScissor (2,006,018 samples, 0.15%)</title><rect x="231.1" y="685" width="1.8" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="234.14" y="695.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (114,343,026 samples, 8.76%)</title><rect x="1060.4" y="701" width="103.3" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1063.40" y="711.5" >[libnvidia-g..</text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="68.9" y="685" width="2.7" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="71.91" y="695.5" ></text>
+</g>
+<g >
+<title>QQuickWindowPrivate::createTextureFromNativeTexture (7,021,063 samples, 0.54%)</title><rect x="543.8" y="685" width="6.4" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="546.81" y="695.5" ></text>
+</g>
+<g >
+<title>__glDispatchCheckMultithreaded@plt (1,003,009 samples, 0.08%)</title><rect x="1174.6" y="717" width="0.9" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
+<text  x="1177.59" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1131.1" y="525" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1134.09" y="535.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="381" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="391.5" ></text>
+</g>
+<g >
+<title>QQuickWindowPrivate::syncSceneGraph (21,063,189 samples, 1.61%)</title><rect x="556.5" y="781" width="19.0" height="15.0" fill="rgb(215,46,11)" rx="2" ry="2" />
+<text  x="559.50" y="791.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="528.4" y="573" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="531.40" y="583.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (2,006,018 samples, 0.15%)</title><rect x="1058.6" y="701" width="1.8" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1061.59" y="711.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (2,006,018 samples, 0.15%)</title><rect x="213.0" y="685" width="1.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="216.01" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="953.5" y="589" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="956.46" y="599.5" ></text>
+</g>
+<g >
+<title>[libGLdispatch.so.0.0.0] (8,024,072 samples, 0.61%)</title><rect x="585.5" y="749" width="7.2" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="588.50" y="759.5" ></text>
+</g>
+<g >
+<title>[libxcb.so.1.1.0] (14,042,126 samples, 1.08%)</title><rect x="1083.1" y="653" width="12.6" height="15.0" fill="rgb(226,98,23)" rx="2" ry="2" />
+<text  x="1086.06" y="663.5" ></text>
+</g>
+<g >
+<title>glXSwapBuffers (13,039,117 samples, 1.00%)</title><rect x="1163.7" y="733" width="11.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="1166.72" y="743.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="520.2" y="653" width="1.0" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="523.25" y="663.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="68.9" y="701" width="2.7" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="71.91" y="711.5" ></text>
+</g>
+<g >
+<title>__GI___writev (11,033,099 samples, 0.84%)</title><rect x="1085.8" y="589" width="9.9" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="1088.78" y="599.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (9,027,081 samples, 0.69%)</title><rect x="23.6" y="781" width="8.2" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="26.59" y="791.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="461" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="471.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (450,351,041 samples, 34.49%)</title><rect x="640.8" y="733" width="406.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="643.78" y="743.5" >[libnvidia-glcore.so.580.159.03]</text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="923.5" y="621" width="1.0" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="926.55" y="631.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (34,102,306 samples, 2.61%)</title><rect x="610.0" y="733" width="30.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="612.97" y="743.5" >[l..</text>
+</g>
+<g >
+<title>__GI___futex_abstimed_wait_cancelable64 (2,006,018 samples, 0.15%)</title><rect x="528.4" y="685" width="1.8" height="15.0" fill="rgb(215,48,11)" rx="2" ry="2" />
+<text  x="531.40" y="695.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (6,018,054 samples, 0.46%)</title><rect x="913.6" y="637" width="5.4" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="916.58" y="647.5" ></text>
+</g>
+<g >
+<title>QSGMaterialShader::RenderState::combinedMatrix (1,003,009 samples, 0.08%)</title><rect x="271.9" y="669" width="0.9" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="274.92" y="679.5" ></text>
+</g>
+<g >
+<title>QSGDistanceFieldGlyphCache::baseFontSize (1,003,009 samples, 0.08%)</title><rect x="18.2" y="781" width="0.9" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="21.16" y="791.5" ></text>
+</g>
+<g >
+<title>QFontPrivate::engineForScript (4,012,036 samples, 0.31%)</title><rect x="570.1" y="685" width="3.6" height="15.0" fill="rgb(250,211,50)" rx="2" ry="2" />
+<text  x="573.09" y="695.5" ></text>
+</g>
+<g >
+<title>QSGDistanceFieldTextMaterial::updateTextureSize (1,003,009 samples, 0.08%)</title><rect x="312.7" y="637" width="0.9" height="15.0" fill="rgb(223,83,19)" rx="2" ry="2" />
+<text  x="315.70" y="647.5" ></text>
+</g>
+<g >
+<title>gz::gui::plugins::TextureNodeRhiOpenGLPrivate::CreateTexture (15,045,135 samples, 1.15%)</title><rect x="542.0" y="717" width="13.6" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="545.00" y="727.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (25,075,225 samples, 1.92%)</title><rect x="130.5" y="509" width="22.7" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="133.54" y="519.5" >Q..</text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (6,018,054 samples, 0.46%)</title><rect x="562.8" y="685" width="5.5" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="565.84" y="695.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="525" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="535.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="561.9" y="589" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="564.94" y="599.5" ></text>
+</g>
+<g >
+<title>QQuickWindowPrivate::updateDirtyNodes (16,048,144 samples, 1.23%)</title><rect x="559.2" y="765" width="14.5" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="562.22" y="775.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (19,057,171 samples, 1.46%)</title><rect x="131.4" y="365" width="17.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="134.44" y="375.5" ></text>
+</g>
+<g >
+<title>QSGRhiLayer::hasAlphaChannel (1,003,009 samples, 0.08%)</title><rect x="476.7" y="701" width="0.9" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="479.74" y="711.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (36,108,324 samples, 2.76%)</title><rect x="35.4" y="813" width="32.6" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="38.38" y="823.5" >[l..</text>
+</g>
+<g >
+<title>QFontEngine::getGlyphPositions (1,003,009 samples, 0.08%)</title><rect x="28.1" y="765" width="0.9" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="31.13" y="775.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::nodeChanged (3,009,027 samples, 0.23%)</title><rect x="560.1" y="605" width="2.7" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="563.12" y="615.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="145.9" y="253" width="1.0" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="148.94" y="263.5" ></text>
+</g>
+<g >
+<title>[unknown] (27,081,243 samples, 2.07%)</title><rect x="1135.6" y="541" width="24.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1138.62" y="551.5" >[..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1173.7" y="653" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1176.69" y="663.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1028.7" y="525" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1031.68" y="535.5" ></text>
+</g>
+<g >
+<title>tcache_get_n (1,003,009 samples, 0.08%)</title><rect x="566.5" y="589" width="0.9" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="569.47" y="599.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="445" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="455.5" ></text>
+</g>
+<g >
+<title>__GI___libc_free (1,003,009 samples, 0.08%)</title><rect x="567.4" y="669" width="0.9" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="570.37" y="679.5" ></text>
+</g>
+<g >
+<title>xcb_flush (15,045,135 samples, 1.15%)</title><rect x="1082.2" y="669" width="13.5" height="15.0" fill="rgb(224,91,21)" rx="2" ry="2" />
+<text  x="1085.15" y="679.5" ></text>
+</g>
+<g >
+<title>QSGDefaultRenderContext::renderNextFrame (1,003,009 samples, 0.08%)</title><rect x="112.4" y="765" width="0.9" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="115.41" y="775.5" ></text>
+</g>
+<g >
+<title>QColor::alphaF (1,003,009 samples, 0.08%)</title><rect x="117.8" y="685" width="1.0" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="120.85" y="695.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (2,006,018 samples, 0.15%)</title><rect x="535.7" y="717" width="1.8" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="538.65" y="727.5" ></text>
+</g>
+<g >
+<title>QFontMetricsF::height (5,015,045 samples, 0.38%)</title><rect x="569.2" y="701" width="4.5" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="572.19" y="711.5" ></text>
+</g>
+<g >
+<title>QTimerInfoList::repairTimersIfNeeded (1,003,009 samples, 0.08%)</title><rect x="97.0" y="685" width="0.9" height="15.0" fill="rgb(213,37,9)" rx="2" ry="2" />
+<text  x="100.00" y="695.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="147.8" y="285" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="150.76" y="295.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="99.7" y="701" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="102.72" y="711.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (14,042,126 samples, 1.08%)</title><rect x="134.2" y="269" width="12.7" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="137.16" y="279.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="464.1" y="589" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="467.06" y="599.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1084.9" y="525" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1087.87" y="535.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (36,108,324 samples, 2.76%)</title><rect x="35.4" y="701" width="32.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="38.38" y="711.5" >[l..</text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::checkLineWidth (1,003,009 samples, 0.08%)</title><rect x="450.5" y="701" width="0.9" height="15.0" fill="rgb(215,49,11)" rx="2" ry="2" />
+<text  x="453.46" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="948.0" y="445" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="951.02" y="455.5" ></text>
+</g>
+<g >
+<title>glXMakeCurrent (1,003,009 samples, 0.08%)</title><rect x="580.1" y="701" width="0.9" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="583.06" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (7,021,063 samples, 0.54%)</title><rect x="1071.3" y="605" width="6.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1074.27" y="615.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="539.3" y="557" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="542.28" y="567.5" ></text>
+</g>
+<g >
+<title>__GI___lll_lock_wait (2,006,018 samples, 0.15%)</title><rect x="947.1" y="605" width="1.8" height="15.0" fill="rgb(226,96,23)" rx="2" ry="2" />
+<text  x="950.11" y="615.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="948.0" y="541" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="951.02" y="551.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1075.8" y="493" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1078.81" y="503.5" ></text>
+</g>
+<g >
+<title>[unknown] (11,033,099 samples, 0.84%)</title><rect x="1085.8" y="525" width="9.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1088.78" y="535.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (16,048,144 samples, 1.23%)</title><rect x="625.4" y="701" width="14.5" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="628.38" y="711.5" ></text>
+</g>
+<g >
+<title>__pthread_rwlock_wrunlock (1,003,009 samples, 0.08%)</title><rect x="1130.2" y="557" width="0.9" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="1133.18" y="567.5" ></text>
+</g>
+<g >
+<title>QRhiCommandBuffer::drawIndexed (1,003,009 samples, 0.08%)</title><rect x="405.1" y="701" width="1.0" height="15.0" fill="rgb(248,202,48)" rx="2" ry="2" />
+<text  x="408.15" y="711.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (23,069,207 samples, 1.77%)</title><rect x="273.7" y="685" width="20.9" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="276.73" y="695.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (35,105,315 samples, 2.69%)</title><rect x="480.4" y="733" width="31.7" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="483.37" y="743.5" >QS..</text>
+</g>
+<g >
+<title>gz::gui::plugins::TextureNodeRhiOpenGL::PrepareNode (16,048,144 samples, 1.23%)</title><rect x="541.1" y="733" width="14.5" height="15.0" fill="rgb(215,46,11)" rx="2" ry="2" />
+<text  x="544.09" y="743.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::updateMaterialStaticData (10,030,090 samples, 0.77%)</title><rect x="322.7" y="701" width="9.0" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="325.67" y="711.5" ></text>
+</g>
+<g >
+<title>operator new (1,003,009 samples, 0.08%)</title><rect x="449.6" y="637" width="0.9" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="452.55" y="647.5" ></text>
+</g>
+<g >
+<title>non-virtual thunk to QWindow::surfaceHandle (2,006,018 samples, 0.15%)</title><rect x="1047.7" y="733" width="1.8" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="1050.71" y="743.5" ></text>
+</g>
+<g >
+<title>operator delete (1,003,009 samples, 0.08%)</title><rect x="554.7" y="685" width="0.9" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="557.69" y="695.5" ></text>
+</g>
+<g >
+<title>[libglib-2.0.so.0.8000.0] (1,003,009 samples, 0.08%)</title><rect x="97.9" y="717" width="0.9" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="100.91" y="727.5" ></text>
+</g>
+<g >
+<title>QQuickTextPrivate::availableHeight (1,003,009 samples, 0.08%)</title><rect x="568.3" y="717" width="0.9" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="571.28" y="727.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned_erms (1,003,009 samples, 0.08%)</title><rect x="925.4" y="621" width="0.9" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="928.36" y="631.5" ></text>
+</g>
+<g >
+<title>__GI___pthread_mutex_unlock_usercnt (1,003,009 samples, 0.08%)</title><rect x="918.1" y="573" width="0.9" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="921.11" y="583.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="413" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="423.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (18,054,162 samples, 1.38%)</title><rect x="132.4" y="317" width="16.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="135.35" y="327.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="477" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="487.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (4,012,036 samples, 0.31%)</title><rect x="17.3" y="797" width="3.6" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="20.25" y="807.5" ></text>
+</g>
+<g >
+<title>[unknown] (12,036,108 samples, 0.92%)</title><rect x="1149.2" y="445" width="10.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1152.22" y="455.5" ></text>
+</g>
+<g >
+<title>tcache_get (1,003,009 samples, 0.08%)</title><rect x="566.5" y="605" width="0.9" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="569.47" y="615.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_lock (20,060,180 samples, 1.54%)</title><rect x="954.4" y="669" width="18.1" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="957.36" y="679.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="90.7" y="829" width="0.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="93.66" y="839.5" ></text>
+</g>
+<g >
+<title>QRhiCommandBuffer::setVertexInput (49,147,441 samples, 3.76%)</title><rect x="406.1" y="701" width="44.4" height="15.0" fill="rgb(254,225,53)" rx="2" ry="2" />
+<text  x="409.05" y="711.5" >QRhi..</text>
+</g>
+<g >
+<title>QCoreApplication::sendPostedEvents (1,003,009 samples, 0.08%)</title><rect x="93.4" y="781" width="0.9" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="96.38" y="791.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::uploadBatch (29,087,261 samples, 2.23%)</title><rect x="369.8" y="717" width="26.3" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="372.80" y="727.5" >Q..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="992.4" y="605" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="995.43" y="615.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="632.6" y="669" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="635.63" y="679.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1131.1" y="541" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1134.09" y="551.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::prepareAlphaBatches (2,006,018 samples, 0.15%)</title><rect x="167.7" y="717" width="1.8" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="170.70" y="727.5" ></text>
+</g>
+<g >
+<title>gz::gui::plugins::RenderSync::WaitForWorkerThread (5,015,045 samples, 0.38%)</title><rect x="528.4" y="749" width="4.5" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="531.40" y="759.5" ></text>
+</g>
+<g >
+<title>__GI___clock_gettime (1,003,009 samples, 0.08%)</title><rect x="1161.9" y="669" width="0.9" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="1164.90" y="679.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1171.0" y="589" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1173.97" y="599.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::prepareRenderMergedBatch (221,664,989 samples, 16.97%)</title><rect x="169.5" y="717" width="200.3" height="15.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="172.51" y="727.5" >QSGBatchRenderer::Renderer..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="464.1" y="573" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="467.06" y="583.5" ></text>
+</g>
+<g >
+<title>__GI___libc_free (1,003,009 samples, 0.08%)</title><rect x="553.8" y="669" width="0.9" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="556.78" y="679.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (2,006,018 samples, 0.15%)</title><rect x="154.1" y="541" width="1.8" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="157.10" y="551.5" ></text>
+</g>
+<g >
+<title>__GI___poll (1,003,009 samples, 0.08%)</title><rect x="1084.9" y="605" width="0.9" height="15.0" fill="rgb(228,110,26)" rx="2" ry="2" />
+<text  x="1087.87" y="615.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (31,093,279 samples, 2.38%)</title><rect x="129.6" y="589" width="28.1" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="599.5" >Q..</text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="144.1" y="221" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="147.13" y="231.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="532.0" y="557" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="535.03" y="567.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (19,057,171 samples, 1.46%)</title><rect x="131.4" y="429" width="17.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="134.44" y="439.5" ></text>
+</g>
+<g >
+<title>QFont::substitutes (1,003,009 samples, 0.08%)</title><rect x="571.0" y="653" width="0.9" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="574.00" y="663.5" ></text>
+</g>
+<g >
+<title>__glDispatchCheckMultithreaded (2,006,018 samples, 0.15%)</title><rect x="1172.8" y="717" width="1.8" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="1175.78" y="727.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="464.1" y="685" width="0.9" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="467.06" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="971.6" y="557" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="974.58" y="567.5" ></text>
+</g>
+<g >
+<title>__GI___poll (3,009,027 samples, 0.23%)</title><rect x="1131.1" y="605" width="2.7" height="15.0" fill="rgb(228,110,26)" rx="2" ry="2" />
+<text  x="1134.09" y="615.5" ></text>
+</g>
+<g >
+<title>QSGPlainTexture::~QSGPlainTexture (5,015,045 samples, 0.38%)</title><rect x="550.2" y="685" width="4.5" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="553.15" y="695.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="509" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="519.5" ></text>
+</g>
+<g >
+<title>[libGLX.so.0.0.0] (1,003,009 samples, 0.08%)</title><rect x="579.2" y="701" width="0.9" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="582.16" y="711.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (36,108,324 samples, 2.76%)</title><rect x="35.4" y="717" width="32.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="38.38" y="727.5" >[l..</text>
+</g>
+<g >
+<title>QBasicMutex::unlock (1,003,009 samples, 0.08%)</title><rect x="541.1" y="717" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="544.09" y="727.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::endRenderPass (1,003,009 samples, 0.08%)</title><rect x="114.2" y="749" width="0.9" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="117.22" y="759.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_lock (7,021,063 samples, 0.54%)</title><rect x="633.5" y="669" width="6.4" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="636.53" y="679.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (31,093,279 samples, 2.38%)</title><rect x="129.6" y="621" width="28.1" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="631.5" >Q..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="464.1" y="621" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="467.06" y="631.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (3,009,027 samples, 0.23%)</title><rect x="518.4" y="717" width="2.8" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="521.43" y="727.5" ></text>
+</g>
+<g >
+<title>QQuickTextNode::addGlyphs (6,018,054 samples, 0.46%)</title><rect x="15.4" y="813" width="5.5" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="18.44" y="823.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="1059.5" y="685" width="0.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1062.49" y="695.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="156.8" y="573" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="159.82" y="583.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (118,355,062 samples, 9.06%)</title><rect x="1056.8" y="733" width="106.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1059.77" y="743.5" >[libGLX_nvidi..</text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (18,054,162 samples, 1.38%)</title><rect x="132.4" y="301" width="16.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="135.35" y="311.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (28,084,252 samples, 2.15%)</title><rect x="615.4" y="717" width="25.4" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="618.41" y="727.5" >[..</text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::unmap (12,036,108 samples, 0.92%)</title><rect x="370.7" y="701" width="10.9" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="373.71" y="711.5" ></text>
+</g>
+<g >
+<title>__GI___lll_lock_wait (2,006,018 samples, 0.15%)</title><rect x="991.5" y="653" width="1.8" height="15.0" fill="rgb(226,96,23)" rx="2" ry="2" />
+<text  x="994.52" y="663.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="90.7" y="717" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="93.66" y="727.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (47,141,423 samples, 3.61%)</title><rect x="907.2" y="653" width="42.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="910.24" y="663.5" >[lib..</text>
+</g>
+<g >
+<title>[libglib-2.0.so.0.8000.0] (1,003,009 samples, 0.08%)</title><rect x="539.3" y="669" width="0.9" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="542.28" y="679.5" ></text>
+</g>
+<g >
+<title>futex_wait (1,003,009 samples, 0.08%)</title><rect x="971.6" y="621" width="0.9" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="974.58" y="631.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_lock (21,063,189 samples, 1.61%)</title><rect x="974.3" y="685" width="19.0" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="977.30" y="695.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="270.1" y="669" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="273.11" y="679.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="71.6" y="829" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="74.63" y="839.5" ></text>
+</g>
+<g >
+<title>__GI___pthread_mutex_unlock_usercnt (2,006,018 samples, 0.15%)</title><rect x="952.5" y="637" width="1.9" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="955.55" y="647.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (2,006,018 samples, 0.15%)</title><rect x="378.0" y="685" width="1.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="380.96" y="695.5" ></text>
+</g>
+<g >
+<title>QSGDistanceFieldTextMaterial::updateTextureSizeAndWrapper (1,003,009 samples, 0.08%)</title><rect x="312.7" y="653" width="0.9" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="315.70" y="663.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="314.5" y="653" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="317.52" y="663.5" ></text>
+</g>
+<g >
+<title>QSGRootNode::notifyNodeChange (3,009,027 samples, 0.23%)</title><rect x="560.1" y="621" width="2.7" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="563.12" y="631.5" ></text>
+</g>
+<g >
+<title>QWindow::devicePixelRatio (1,003,009 samples, 0.08%)</title><rect x="573.7" y="765" width="0.9" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="576.72" y="775.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1093.9" y="349" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1096.93" y="359.5" ></text>
+</g>
+<g >
+<title>__GI___lll_lock_wake (1,003,009 samples, 0.08%)</title><rect x="953.5" y="605" width="0.9" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="956.46" y="615.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (36,108,324 samples, 2.76%)</title><rect x="35.4" y="797" width="32.6" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="38.38" y="807.5" >[l..</text>
+</g>
+<g >
+<title>___pthread_rwlock_wrlock (1,003,009 samples, 0.08%)</title><rect x="90.7" y="685" width="0.9" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="93.66" y="695.5" ></text>
+</g>
+<g >
+<title>futex_wait (2,006,018 samples, 0.15%)</title><rect x="991.5" y="637" width="1.8" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="994.52" y="647.5" ></text>
+</g>
+<g >
+<title>QOpenGLContext::handle (1,003,009 samples, 0.08%)</title><rect x="584.6" y="749" width="0.9" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="587.59" y="759.5" ></text>
+</g>
+<g >
+<title>QSGRootNode::notifyNodeChange (1,003,009 samples, 0.08%)</title><rect x="533.8" y="717" width="0.9" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="536.84" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1131.1" y="493" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1134.09" y="503.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="34.5" y="829" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="37.47" y="839.5" ></text>
+</g>
+<g >
+<title>__GI___lll_lock_wait (1,003,009 samples, 0.08%)</title><rect x="971.6" y="637" width="0.9" height="15.0" fill="rgb(226,96,23)" rx="2" ry="2" />
+<text  x="974.58" y="647.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="464.1" y="669" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="467.06" y="679.5" ></text>
+</g>
+<g >
+<title>QMetaObject::inherits (1,003,009 samples, 0.08%)</title><rect x="472.2" y="701" width="0.9" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="475.21" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="528.4" y="557" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="531.40" y="567.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="16.3" y="733" width="1.0" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="19.34" y="743.5" ></text>
+</g>
+<g >
+<title>drmIoctl (29,087,261 samples, 2.23%)</title><rect x="1133.8" y="621" width="26.3" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="1136.81" y="631.5" >d..</text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="271.9" y="653" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="274.92" y="663.5" ></text>
+</g>
+<g >
+<title>QSGDefaultRenderContext::beginNextFrame (1,003,009 samples, 0.08%)</title><rect x="111.5" y="765" width="0.9" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="114.51" y="775.5" ></text>
+</g>
+<g >
+<title>lll_mutex_lock_optimized (1,003,009 samples, 0.08%)</title><rect x="971.6" y="653" width="0.9" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="974.58" y="663.5" ></text>
+</g>
+<g >
+<title>QTextLayout::preeditAreaText (1,003,009 samples, 0.08%)</title><rect x="10.0" y="829" width="0.9" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="13.00" y="839.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_unlock (3,009,027 samples, 0.23%)</title><rect x="530.2" y="669" width="2.7" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="533.22" y="679.5" ></text>
+</g>
+<g >
+<title>QSGRhiDistanceFieldGlyphCache::commitResourceUpdates (1,003,009 samples, 0.08%)</title><rect x="313.6" y="653" width="0.9" height="15.0" fill="rgb(235,140,33)" rx="2" ry="2" />
+<text  x="316.61" y="663.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (30,090,270 samples, 2.30%)</title><rect x="129.6" y="573" width="27.2" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="583.5" >Q..</text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (3,009,027 samples, 0.23%)</title><rect x="116.9" y="701" width="2.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="119.94" y="711.5" ></text>
+</g>
+<g >
+<title>lll_mutex_lock_optimized (2,006,018 samples, 0.15%)</title><rect x="947.1" y="621" width="1.8" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="950.11" y="631.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="521.2" y="749" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="524.15" y="759.5" ></text>
+</g>
+<g >
+<title>QPaintDevice::~QPaintDevice (1,003,009 samples, 0.08%)</title><rect x="552.0" y="669" width="0.9" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
+<text  x="554.97" y="679.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1170.1" y="637" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1173.06" y="647.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="155.9" y="557" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="158.91" y="567.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::render (389,167,492 samples, 29.80%)</title><rect x="115.1" y="749" width="351.7" height="15.0" fill="rgb(215,49,11)" rx="2" ry="2" />
+<text  x="118.13" y="759.5" >QSGBatchRenderer::Renderer::render</text>
+</g>
+<g >
+<title>xcb_send_request (4,012,036 samples, 0.31%)</title><rect x="1077.6" y="637" width="3.6" height="15.0" fill="rgb(217,55,13)" rx="2" ry="2" />
+<text  x="1080.62" y="647.5" ></text>
+</g>
+<g >
+<title>QObject::QObject (1,003,009 samples, 0.08%)</title><rect x="544.7" y="637" width="0.9" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="547.72" y="647.5" ></text>
+</g>
+<g >
+<title>lll_mutex_lock_optimized (2,006,018 samples, 0.15%)</title><rect x="991.5" y="669" width="1.8" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="994.52" y="679.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="904.5" y="605" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="907.52" y="615.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (20,060,180 samples, 1.54%)</title><rect x="130.5" y="445" width="18.2" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="133.54" y="455.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="904.5" y="637" width="2.7" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="907.52" y="647.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (7,021,063 samples, 0.54%)</title><rect x="575.5" y="765" width="6.4" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="578.53" y="775.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::nodeChanged (1,003,009 samples, 0.08%)</title><rect x="520.2" y="669" width="1.0" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="523.25" y="679.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="70.7" y="605" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="73.72" y="615.5" ></text>
+</g>
+<g >
+<title>QHighDpiScaling::screenSubfactor (2,006,018 samples, 0.15%)</title><rect x="523.9" y="733" width="1.8" height="15.0" fill="rgb(227,104,25)" rx="2" ry="2" />
+<text  x="526.87" y="743.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (4,012,036 samples, 0.31%)</title><rect x="163.2" y="669" width="3.6" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="166.16" y="679.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="948.0" y="493" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="951.02" y="503.5" ></text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1072.2" y="541" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1075.18" y="551.5" ></text>
+</g>
+<g >
+<title>[libQt6Core.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="540.2" y="669" width="0.9" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="543.18" y="679.5" ></text>
+</g>
+<g >
+<title>QSGAbstractRenderer::setDeviceRect (1,003,009 samples, 0.08%)</title><rect x="107.0" y="765" width="0.9" height="15.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="109.97" y="775.5" ></text>
+</g>
+<g >
+<title>QSGDistanceFieldGlyphCache::release (4,012,036 samples, 0.31%)</title><rect x="563.7" y="669" width="3.7" height="15.0" fill="rgb(213,37,8)" rx="2" ry="2" />
+<text  x="566.75" y="679.5" ></text>
+</g>
+<g >
+<title>QSGRootNode::notifyNodeChange (1,003,009 samples, 0.08%)</title><rect x="520.2" y="685" width="1.0" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="523.25" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1170.1" y="621" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1173.06" y="631.5" ></text>
+</g>
+<g >
+<title>pthread_mutex_lock@plt (2,006,018 samples, 0.15%)</title><rect x="905.4" y="605" width="1.8" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="908.42" y="615.5" ></text>
+</g>
+<g >
+<title>QColor::fromRgbF (3,009,027 samples, 0.23%)</title><rect x="329.0" y="669" width="2.7" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="332.02" y="679.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (7,021,063 samples, 0.54%)</title><rect x="137.8" y="157" width="6.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="140.79" y="167.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::updateClipState (22,066,198 samples, 1.69%)</title><rect x="218.4" y="701" width="20.0" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="221.45" y="711.5" ></text>
+</g>
+<g >
+<title>start_thread (1,215,646,908 samples, 93.09%)</title><rect x="91.6" y="829" width="1098.4" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="94.57" y="839.5" >start_thread</text>
+</g>
+<g >
+<title>QRhiCommandBuffer::beginPass (3,009,027 samples, 0.23%)</title><rect x="116.9" y="717" width="2.8" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="119.94" y="727.5" ></text>
+</g>
+<g >
+<title>[libQt6Core.so.6.4.2] (1,215,646,908 samples, 93.09%)</title><rect x="91.6" y="813" width="1098.4" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="94.57" y="823.5" >[libQt6Core.so.6.4.2]</text>
+</g>
+<g >
+<title>QFontDatabasePrivate::load (3,009,027 samples, 0.23%)</title><rect x="571.0" y="669" width="2.7" height="15.0" fill="rgb(205,1,0)" rx="2" ry="2" />
+<text  x="574.00" y="679.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (7,021,063 samples, 0.54%)</title><rect x="137.8" y="221" width="6.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="140.79" y="231.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="464.1" y="637" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="467.06" y="647.5" ></text>
+</g>
+<g >
+<title>__GI_ppoll (7,021,063 samples, 0.54%)</title><rect x="1071.3" y="637" width="6.3" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="1074.27" y="647.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (118,355,062 samples, 9.06%)</title><rect x="1056.8" y="717" width="106.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1059.77" y="727.5" >[libGLX_nvidi..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 0.31%)</title><rect x="1044.1" y="525" width="3.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1047.09" y="535.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1173.7" y="701" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1176.69" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (23,069,207 samples, 1.77%)</title><rect x="1139.2" y="493" width="20.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1142.25" y="503.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1094.8" y="317" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1097.84" y="327.5" ></text>
+</g>
+<g >
+<title>QAbstractEventDispatcher::awake (1,003,009 samples, 0.08%)</title><rect x="94.3" y="765" width="0.9" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="97.29" y="775.5" ></text>
+</g>
+<g >
+<title>QSGGeometryNode::activeMaterial (14,042,126 samples, 1.08%)</title><rect x="331.7" y="701" width="12.7" height="15.0" fill="rgb(251,213,50)" rx="2" ry="2" />
+<text  x="334.74" y="711.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned_erms (2,006,018 samples, 0.15%)</title><rect x="379.8" y="685" width="1.8" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="382.77" y="695.5" ></text>
+</g>
+<g >
+<title>QSGOpaqueTextureMaterial::type (7,021,063 samples, 0.54%)</title><rect x="349.0" y="701" width="6.3" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="351.96" y="711.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (32,096,288 samples, 2.46%)</title><rect x="129.6" y="637" width="29.0" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="647.5" >QS..</text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="916.3" y="605" width="2.7" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="919.30" y="615.5" ></text>
+</g>
+<g >
+<title>QQmlData::isSignalConnected (1,003,009 samples, 0.08%)</title><rect x="465.9" y="717" width="0.9" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="468.87" y="727.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (74,222,666 samples, 5.68%)</title><rect x="1095.7" y="685" width="67.1" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1098.75" y="695.5" >[libnvi..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1170.1" y="669" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1173.06" y="679.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (20,060,180 samples, 1.54%)</title><rect x="72.5" y="845" width="18.2" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="75.53" y="855.5" ></text>
+</g>
+<g >
+<title>QSGPlainTexture::setTextureFromNativeTexture (4,012,036 samples, 0.31%)</title><rect x="546.5" y="669" width="3.7" height="15.0" fill="rgb(245,188,45)" rx="2" ry="2" />
+<text  x="549.53" y="679.5" ></text>
+</g>
+<g >
+<title>QQuickWindowPrivate::renderSceneGraph (1,003,009 samples, 0.08%)</title><rect x="33.6" y="813" width="0.9" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="36.56" y="823.5" ></text>
+</g>
+<g >
+<title>QMetaObject::cast (4,012,036 samples, 0.31%)</title><rect x="471.3" y="717" width="3.6" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="474.31" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="99.7" y="653" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="102.72" y="663.5" ></text>
+</g>
+<g >
+<title>QThreadStorageData::get (1,003,009 samples, 0.08%)</title><rect x="606.3" y="717" width="1.0" height="15.0" fill="rgb(222,80,19)" rx="2" ry="2" />
+<text  x="609.34" y="727.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="589" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="599.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="953.5" y="557" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="956.46" y="567.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="669" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="679.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (5,015,045 samples, 0.38%)</title><rect x="162.3" y="701" width="4.5" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="165.26" y="711.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="90.7" y="797" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="93.66" y="807.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (19,057,171 samples, 1.46%)</title><rect x="131.4" y="349" width="17.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="134.44" y="359.5" ></text>
+</g>
+<g >
+<title>QSGTexturePrivate::QSGTexturePrivate (1,003,009 samples, 0.08%)</title><rect x="545.6" y="653" width="0.9" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="548.62" y="663.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="70.7" y="621" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="73.72" y="631.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (36,108,324 samples, 2.76%)</title><rect x="35.4" y="733" width="32.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="38.38" y="743.5" >[l..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="971.6" y="573" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="974.58" y="583.5" ></text>
+</g>
+<g >
+<title>QSGRenderer::nodeChanged (1,003,009 samples, 0.08%)</title><rect x="16.3" y="765" width="1.0" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="19.34" y="775.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned_erms (1,003,009 samples, 0.08%)</title><rect x="948.9" y="637" width="0.9" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="951.92" y="647.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned_erms (1,003,009 samples, 0.08%)</title><rect x="165.9" y="653" width="0.9" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="168.88" y="663.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="916.3" y="621" width="2.7" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="919.30" y="631.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_unlock (1,003,009 samples, 0.08%)</title><rect x="1162.8" y="685" width="0.9" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="1165.81" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="528.4" y="621" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="531.40" y="631.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1176.4" y="637" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1179.41" y="647.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="539.3" y="589" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="542.28" y="599.5" ></text>
+</g>
+<g >
+<title>QSGRhiSupport::instance (1,003,009 samples, 0.08%)</title><rect x="547.4" y="653" width="0.9" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="550.43" y="663.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (32,096,288 samples, 2.46%)</title><rect x="129.6" y="717" width="29.0" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="727.5" >QS..</text>
+</g>
+<g >
+<title>QSGRootNode::notifyNodeChange (2,006,018 samples, 0.15%)</title><rect x="15.4" y="781" width="1.9" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="18.44" y="791.5" ></text>
+</g>
+<g >
+<title>QRawFont::~QRawFont (1,003,009 samples, 0.08%)</title><rect x="562.8" y="653" width="0.9" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="565.84" y="663.5" ></text>
+</g>
+<g >
+<title>QSGDistanceFieldGlyphCache::glyphData (1,003,009 samples, 0.08%)</title><rect x="565.6" y="653" width="0.9" height="15.0" fill="rgb(242,171,40)" rx="2" ry="2" />
+<text  x="568.56" y="663.5" ></text>
+</g>
+<g >
+<title>[libglib-2.0.so.0.8000.0] (8,024,072 samples, 0.61%)</title><rect x="95.2" y="749" width="7.2" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="98.19" y="759.5" ></text>
+</g>
+<g >
+<title>xcb_send_request_with_fds64 (3,009,027 samples, 0.23%)</title><rect x="1078.5" y="621" width="2.7" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="1081.53" y="631.5" ></text>
+</g>
+<g >
+<title>[libGLX.so.0.0.0] (4,012,036 samples, 0.31%)</title><rect x="1164.6" y="717" width="3.6" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="1167.62" y="727.5" ></text>
+</g>
+<g >
+<title>QRhi::endFrame (656,970,895 samples, 50.31%)</title><rect x="581.9" y="781" width="593.6" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
+<text  x="584.87" y="791.5" >QRhi::endFrame</text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (7,021,063 samples, 0.54%)</title><rect x="137.8" y="173" width="6.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="140.79" y="183.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="530.2" y="573" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="533.22" y="583.5" ></text>
+</g>
+<g >
+<title>[libqxcb-glx-integration.so] (36,108,324 samples, 2.76%)</title><rect x="35.4" y="829" width="32.6" height="15.0" fill="rgb(237,147,35)" rx="2" ry="2" />
+<text  x="38.38" y="839.5" >[l..</text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="90.7" y="781" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="93.66" y="791.5" ></text>
+</g>
+<g >
+<title>QQuickWindowPrivate::renderSceneGraph (502,507,509 samples, 38.48%)</title><rect x="102.4" y="781" width="454.1" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="105.44" y="791.5" >QQuickWindowPrivate::renderSceneGraph</text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (23,069,207 samples, 1.77%)</title><rect x="130.5" y="477" width="20.9" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="133.54" y="487.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="532.0" y="509" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="535.03" y="519.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="90.7" y="813" width="0.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="93.66" y="823.5" ></text>
+</g>
+<g >
+<title>QImage::QImage (1,003,009 samples, 0.08%)</title><rect x="31.8" y="781" width="0.9" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="34.75" y="791.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="145.0" y="237" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="148.04" y="247.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="971.6" y="589" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="974.58" y="599.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="621" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="631.5" ></text>
+</g>
+<g >
+<title>__GI___pthread_mutex_unlock_usercnt (6,018,054 samples, 0.46%)</title><rect x="1042.3" y="701" width="5.4" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="1045.27" y="711.5" ></text>
+</g>
+<g >
+<title>[[vdso]] (1,003,009 samples, 0.08%)</title><rect x="70.7" y="557" width="0.9" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="73.72" y="567.5" ></text>
+</g>
+<g >
+<title>__GI___libc_malloc (1,003,009 samples, 0.08%)</title><rect x="566.5" y="621" width="0.9" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="569.47" y="631.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="1172.8" y="669" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1175.78" y="679.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (3,009,027 samples, 0.23%)</title><rect x="138.7" y="125" width="2.7" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="141.69" y="135.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::ensurePipelineState (23,069,207 samples, 1.77%)</title><rect x="195.8" y="701" width="20.8" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="198.79" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1072.2" y="525" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1075.18" y="535.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,030,090 samples, 0.77%)</title><rect x="1086.7" y="493" width="9.0" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1089.68" y="503.5" ></text>
+</g>
+<g >
+<title>[[vdso]] (1,003,009 samples, 0.08%)</title><rect x="1161.9" y="653" width="0.9" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="1164.90" y="663.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="573" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="583.5" ></text>
+</g>
+<g >
+<title>QSGSimpleTextureNode::setTexture (3,009,027 samples, 0.23%)</title><rect x="534.7" y="733" width="2.8" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="537.75" y="743.5" ></text>
+</g>
+<g >
+<title>QByteArray::setNum (1,003,009 samples, 0.08%)</title><rect x="17.3" y="733" width="0.9" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="20.25" y="743.5" ></text>
+</g>
+<g >
+<title>QSGMaterialShader::RenderState::viewportRect (1,003,009 samples, 0.08%)</title><rect x="305.5" y="669" width="0.9" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="308.45" y="679.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1028.7" y="605" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1031.68" y="615.5" ></text>
+</g>
+<g >
+<title>QRhi::beginFrame (7,021,063 samples, 0.54%)</title><rect x="575.5" y="781" width="6.4" height="15.0" fill="rgb(249,204,49)" rx="2" ry="2" />
+<text  x="578.53" y="791.5" ></text>
+</g>
+<g >
+<title>QTextLine::glyphRuns (11,033,099 samples, 0.84%)</title><rect x="21.8" y="797" width="10.0" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="24.78" y="807.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="539.3" y="573" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="542.28" y="583.5" ></text>
+</g>
+<g >
+<title>QSGRenderer::preprocess (1,003,009 samples, 0.08%)</title><rect x="33.6" y="781" width="0.9" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="36.56" y="791.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::deleteRemovedElements (1,003,009 samples, 0.08%)</title><rect x="166.8" y="717" width="0.9" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="169.79" y="727.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_unlock (1,003,009 samples, 0.08%)</title><rect x="1161.0" y="653" width="0.9" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="1164.00" y="663.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (8,024,072 samples, 0.61%)</title><rect x="919.0" y="637" width="7.3" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="922.02" y="647.5" ></text>
+</g>
+<g >
+<title>QSGNode::removeChildNode (4,012,036 samples, 0.31%)</title><rect x="559.2" y="653" width="3.6" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="562.22" y="663.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1176.4" y="669" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1179.41" y="679.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (4,012,036 samples, 0.31%)</title><rect x="1168.2" y="701" width="3.7" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1171.25" y="711.5" ></text>
+</g>
+<g >
+<title>[libxcb.so.1.1.0] (14,042,126 samples, 1.08%)</title><rect x="1083.1" y="637" width="12.6" height="15.0" fill="rgb(226,98,23)" rx="2" ry="2" />
+<text  x="1086.06" y="647.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="557" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="567.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (7,021,063 samples, 0.54%)</title><rect x="1049.5" y="749" width="6.4" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1052.52" y="759.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="90.7" y="733" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="93.66" y="743.5" ></text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1042.3" y="653" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1045.27" y="663.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="530.2" y="589" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="533.22" y="599.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="68.9" y="733" width="2.7" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="71.91" y="743.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (13,039,117 samples, 1.00%)</title><rect x="134.2" y="253" width="11.7" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="137.16" y="263.5" ></text>
+</g>
+<g >
+<title>QSGAbstractRenderer::setProjectionMatrixToRect (4,012,036 samples, 0.31%)</title><rect x="107.9" y="765" width="3.6" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="110.88" y="775.5" ></text>
+</g>
+<g >
+<title>__glDispatchCheckMultithreaded (2,006,018 samples, 0.15%)</title><rect x="1166.4" y="701" width="1.8" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="1169.44" y="711.5" ></text>
+</g>
+<g >
+<title>QRhi::endFrame (3,009,027 samples, 0.23%)</title><rect x="68.9" y="829" width="2.7" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
+<text  x="71.91" y="839.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1173.7" y="685" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1176.69" y="695.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (36,108,324 samples, 2.76%)</title><rect x="35.4" y="765" width="32.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="38.38" y="775.5" >[l..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 0.31%)</title><rect x="1044.1" y="541" width="3.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1047.09" y="551.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1084.9" y="493" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1087.87" y="503.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (5,015,045 samples, 0.38%)</title><rect x="310.9" y="669" width="4.5" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="313.89" y="679.5" ></text>
+</g>
+<g >
+<title>QOpenGLContext::currentContext (2,006,018 samples, 0.15%)</title><rect x="605.4" y="733" width="1.9" height="15.0" fill="rgb(240,162,38)" rx="2" ry="2" />
+<text  x="608.44" y="743.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="68.9" y="765" width="2.7" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="71.91" y="775.5" ></text>
+</g>
+<g >
+<title>bool QAtomicOps&lt;QMutexPrivate*&gt;::testAndSetRelease&lt;QMutexPrivate*&gt; (1,003,009 samples, 0.08%)</title><rect x="541.1" y="669" width="0.9" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="544.09" y="679.5" ></text>
+</g>
+<g >
+<title>lll_mutex_unlock_optimized (2,006,018 samples, 0.15%)</title><rect x="1028.7" y="669" width="1.8" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="1031.68" y="679.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (8,024,072 samples, 0.61%)</title><rect x="443.2" y="653" width="7.3" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="446.21" y="663.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1178.2" y="621" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1181.22" y="631.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="528.4" y="637" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="531.40" y="647.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (5,015,045 samples, 0.38%)</title><rect x="162.3" y="685" width="4.5" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="165.26" y="695.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="552.9" y="669" width="0.9" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="555.87" y="679.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (5,015,045 samples, 0.38%)</title><rect x="453.2" y="685" width="4.5" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="456.18" y="695.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (656,970,895 samples, 50.31%)</title><rect x="581.9" y="765" width="593.6" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="584.87" y="775.5" >[libQt6Gui.so.6.4.2]</text>
+</g>
+<g >
+<title>QSGOpaqueTextureMaterialRhiShader::updateSampledImage (5,015,045 samples, 0.38%)</title><rect x="266.5" y="685" width="4.5" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="269.48" y="695.5" ></text>
+</g>
+<g >
+<title>QSGOpaqueTextureMaterialRhiShader::updateUniformData (2,006,018 samples, 0.15%)</title><rect x="271.0" y="685" width="1.8" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="274.01" y="695.5" ></text>
+</g>
+<g >
+<title>QSGGeometry::updateTexturedRectGeometry (1,003,009 samples, 0.08%)</title><rect x="535.7" y="701" width="0.9" height="15.0" fill="rgb(206,8,1)" rx="2" ry="2" />
+<text  x="538.65" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (8,024,072 samples, 0.61%)</title><rect x="1088.5" y="413" width="7.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1091.49" y="423.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (32,096,288 samples, 2.46%)</title><rect x="129.6" y="669" width="29.0" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="679.5" >QS..</text>
+</g>
+<g >
+<title>___pthread_cond_signal (3,009,027 samples, 0.23%)</title><rect x="1176.4" y="765" width="2.7" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="1179.41" y="775.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="429" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="439.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1176.4" y="701" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1179.41" y="711.5" ></text>
+</g>
+<g >
+<title>QColor::greenF (1,003,009 samples, 0.08%)</title><rect x="456.8" y="669" width="0.9" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
+<text  x="459.80" y="679.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1028.7" y="621" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1031.68" y="631.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="948.0" y="557" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="951.02" y="567.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="20.0" y="781" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="22.97" y="791.5" ></text>
+</g>
+<g >
+<title>QByteArray::number (1,003,009 samples, 0.08%)</title><rect x="17.3" y="749" width="0.9" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="20.25" y="759.5" ></text>
+</g>
+<g >
+<title>QEventDispatcherGlib::processEvents (9,027,081 samples, 0.69%)</title><rect x="94.3" y="781" width="8.1" height="15.0" fill="rgb(224,90,21)" rx="2" ry="2" />
+<text  x="97.29" y="791.5" ></text>
+</g>
+<g >
+<title>QSGOpacityNode::isSubtreeBlocked (5,015,045 samples, 0.38%)</title><rect x="512.1" y="733" width="4.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="515.09" y="743.5" ></text>
+</g>
+<g >
+<title>std::unique_lock&lt;std::mutex&gt;::~unique_lock (3,009,027 samples, 0.23%)</title><rect x="530.2" y="733" width="2.7" height="15.0" fill="rgb(216,50,12)" rx="2" ry="2" />
+<text  x="533.22" y="743.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="953.5" y="493" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="956.46" y="503.5" ></text>
+</g>
+<g >
+<title>__GI___getpagesize (1,003,009 samples, 0.08%)</title><rect x="1160.1" y="637" width="0.9" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="1163.09" y="647.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="1186.4" y="781" width="0.9" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="1189.37" y="791.5" ></text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1042.3" y="573" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1045.27" y="583.5" ></text>
+</g>
+<g >
+<title>QOpenGLContext::currentContext (2,006,018 samples, 0.15%)</title><rect x="611.8" y="717" width="1.8" height="15.0" fill="rgb(240,162,38)" rx="2" ry="2" />
+<text  x="614.78" y="727.5" ></text>
+</g>
+<g >
+<title>g_main_context_iteration (8,024,072 samples, 0.61%)</title><rect x="95.2" y="765" width="7.2" height="15.0" fill="rgb(245,186,44)" rx="2" ry="2" />
+<text  x="98.19" y="775.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (49,147,441 samples, 3.76%)</title><rect x="406.1" y="685" width="44.4" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="409.05" y="695.5" >[lib..</text>
+</g>
+<g >
+<title>QSGRenderContext::endSync (1,003,009 samples, 0.08%)</title><rect x="1175.5" y="781" width="0.9" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="1178.50" y="791.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned_erms (10,030,090 samples, 0.77%)</title><rect x="387.0" y="685" width="9.1" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="390.02" y="695.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="904.5" y="621" width="0.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="907.52" y="631.5" ></text>
+</g>
+<g >
+<title>QSGRhiSupport::toRhiTextureFormat (1,003,009 samples, 0.08%)</title><rect x="548.3" y="653" width="0.9" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="551.34" y="663.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="151.4" y="477" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="154.38" y="487.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1178.2" y="605" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1181.22" y="615.5" ></text>
+</g>
+<g >
+<title>[unknown] (28,084,252 samples, 2.15%)</title><rect x="1134.7" y="557" width="25.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1137.72" y="567.5" >[..</text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (21,063,189 samples, 1.61%)</title><rect x="130.5" y="461" width="19.1" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="133.54" y="471.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (8,024,072 samples, 0.61%)</title><rect x="137.8" y="237" width="7.2" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="140.79" y="247.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_lock (3,009,027 samples, 0.23%)</title><rect x="949.8" y="653" width="2.7" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="952.83" y="663.5" ></text>
+</g>
+<g >
+<title>__pthread_equal (1,003,009 samples, 0.08%)</title><rect x="1040.5" y="701" width="0.9" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="1043.46" y="711.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (1,003,009 samples, 0.08%)</title><rect x="138.7" y="77" width="0.9" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="141.69" y="87.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::nodeChanged (1,003,009 samples, 0.08%)</title><rect x="533.8" y="701" width="0.9" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="536.84" y="711.5" ></text>
+</g>
+<g >
+<title>QSGDefaultRenderContext::fontKey (1,003,009 samples, 0.08%)</title><rect x="17.3" y="765" width="0.9" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="20.25" y="775.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="971.6" y="541" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="974.58" y="551.5" ></text>
+</g>
+<g >
+<title>lll_mutex_unlock_optimized (1,003,009 samples, 0.08%)</title><rect x="953.5" y="621" width="0.9" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="956.46" y="631.5" ></text>
+</g>
+<g >
+<title>QSGTexture::setFiltering (3,009,027 samples, 0.23%)</title><rect x="267.4" y="669" width="2.7" height="15.0" fill="rgb(216,53,12)" rx="2" ry="2" />
+<text  x="270.39" y="679.5" ></text>
+</g>
+<g >
+<title>gz::gui::plugins::RenderSync::WaitForWorkerThread (2,006,018 samples, 0.15%)</title><rect x="528.4" y="733" width="1.8" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="531.40" y="743.5" ></text>
+</g>
+<g >
+<title>QOpenGLContext::shareGroup (1,003,009 samples, 0.08%)</title><rect x="614.5" y="701" width="0.9" height="15.0" fill="rgb(236,142,34)" rx="2" ry="2" />
+<text  x="617.50" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (8,024,072 samples, 0.61%)</title><rect x="1088.5" y="429" width="7.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1091.49" y="439.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="528.4" y="605" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="531.40" y="615.5" ></text>
+</g>
+<g >
+<title>QBasicAtomicPointer&lt;QMutexPrivate&gt;::testAndSetRelease (1,003,009 samples, 0.08%)</title><rect x="541.1" y="685" width="0.9" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="544.09" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1158.3" y="381" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1161.28" y="391.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="68.9" y="669" width="2.7" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="71.91" y="679.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="118.8" y="685" width="0.9" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="121.76" y="695.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (32,096,288 samples, 2.46%)</title><rect x="129.6" y="701" width="29.0" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="711.5" >QS..</text>
+</g>
+<g >
+<title>[libglib-2.0.so.0.8000.0] (4,012,036 samples, 0.31%)</title><rect x="95.2" y="733" width="3.6" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="98.19" y="743.5" ></text>
+</g>
+<g >
+<title>QRhi::isYUpInNDC (2,006,018 samples, 0.15%)</title><rect x="105.2" y="765" width="1.8" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="108.16" y="775.5" ></text>
+</g>
+<g >
+<title>QQuickTextNode::addTextLayout (25,075,225 samples, 1.92%)</title><rect x="10.0" y="845" width="22.7" height="15.0" fill="rgb(254,226,54)" rx="2" ry="2" />
+<text  x="13.00" y="855.5" >Q..</text>
+</g>
+<g >
+<title>QSGNode::~QSGNode (4,012,036 samples, 0.31%)</title><rect x="559.2" y="685" width="3.6" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="562.22" y="695.5" ></text>
+</g>
+<g >
+<title>QHashSeed::globalSeed (1,003,009 samples, 0.08%)</title><rect x="442.3" y="653" width="0.9" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="445.30" y="663.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="904.5" y="653" width="2.7" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="907.52" y="663.5" ></text>
+</g>
+<g >
+<title>__GI___writev (11,033,099 samples, 0.84%)</title><rect x="1085.8" y="605" width="9.9" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="1088.78" y="615.5" ></text>
+</g>
+<g >
+<title>QSGTexture::QSGTexture (1,003,009 samples, 0.08%)</title><rect x="544.7" y="653" width="0.9" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="547.72" y="663.5" ></text>
+</g>
+<g >
+<title>QSGRenderer::renderScene (452,357,059 samples, 34.64%)</title><rect x="113.3" y="765" width="408.8" height="15.0" fill="rgb(254,225,54)" rx="2" ry="2" />
+<text  x="116.32" y="775.5" >QSGRenderer::renderScene</text>
+</g>
+<g >
+<title>_int_malloc (1,003,009 samples, 0.08%)</title><rect x="449.6" y="605" width="0.9" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="452.55" y="615.5" ></text>
+</g>
+<g >
+<title>QObjectData::dynamicMetaObject (1,003,009 samples, 0.08%)</title><rect x="1184.6" y="765" width="0.9" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="1187.56" y="775.5" ></text>
+</g>
+<g >
+<title>futex_wake (3,009,027 samples, 0.23%)</title><rect x="1176.4" y="749" width="2.7" height="15.0" fill="rgb(219,65,15)" rx="2" ry="2" />
+<text  x="1179.41" y="759.5" ></text>
+</g>
+<g >
+<title>_int_free_merge_chunk (1,003,009 samples, 0.08%)</title><rect x="448.6" y="605" width="1.0" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="451.65" y="615.5" ></text>
+</g>
+<g >
+<title>QSGHiQSubPixelDistanceFieldTextMaterial::type (5,015,045 samples, 0.38%)</title><rect x="344.4" y="701" width="4.6" height="15.0" fill="rgb(227,101,24)" rx="2" ry="2" />
+<text  x="347.42" y="711.5" ></text>
+</g>
+<g >
+<title>[libGLdispatch.so.0.0.0] (2,006,018 samples, 0.15%)</title><rect x="608.2" y="733" width="1.8" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="611.16" y="743.5" ></text>
+</g>
+<g >
+<title>QColor::rgba (1,003,009 samples, 0.08%)</title><rect x="13.6" y="813" width="0.9" height="15.0" fill="rgb(228,107,25)" rx="2" ry="2" />
+<text  x="16.63" y="823.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (2,006,018 samples, 0.15%)</title><rect x="164.1" y="653" width="1.8" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="167.07" y="663.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (249,749,241 samples, 19.12%)</title><rect x="769.5" y="701" width="225.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="772.48" y="711.5" >[libnvidia-glcore.so.580.159...</text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="536.6" y="701" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="539.56" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="532.0" y="541" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="535.03" y="551.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="917.2" y="589" width="0.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="920.20" y="599.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1176.4" y="717" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1179.41" y="727.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (27,081,243 samples, 2.07%)</title><rect x="129.6" y="541" width="24.5" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="551.5" >Q..</text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1042.3" y="589" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1045.27" y="599.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="1098.5" y="669" width="0.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1101.46" y="679.5" ></text>
+</g>
+<g >
+<title>QSGNode::destroy (4,012,036 samples, 0.31%)</title><rect x="559.2" y="669" width="3.6" height="15.0" fill="rgb(250,211,50)" rx="2" ry="2" />
+<text  x="562.22" y="679.5" ></text>
+</g>
+<g >
+<title>_int_free (1,003,009 samples, 0.08%)</title><rect x="581.0" y="717" width="0.9" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="583.97" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1131.1" y="557" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1134.09" y="567.5" ></text>
+</g>
+<g >
+<title>__GI___lll_lock_wake (6,018,054 samples, 0.46%)</title><rect x="1042.3" y="669" width="5.4" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="1045.27" y="679.5" ></text>
+</g>
+<g >
+<title>[libQt6Core.so.6.4.2] (4,012,036 samples, 0.31%)</title><rect x="537.5" y="717" width="3.6" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="540.47" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1028.7" y="637" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1031.68" y="647.5" ></text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1090.3" y="365" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1093.31" y="375.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="829" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="839.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (3,009,027 samples, 0.23%)</title><rect x="29.0" y="765" width="2.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="32.03" y="775.5" ></text>
+</g>
+<g >
+<title>QSGBasicInternalImageNode::preprocess (7,021,063 samples, 0.54%)</title><rect x="471.3" y="733" width="6.3" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
+<text  x="474.31" y="743.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_unlock (2,006,018 samples, 0.15%)</title><rect x="993.3" y="685" width="1.8" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="996.33" y="695.5" ></text>
+</g>
+<g >
+<title>QSGDefaultRenderContext::preprocess (3,009,027 samples, 0.23%)</title><rect x="477.6" y="733" width="2.8" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="480.65" y="743.5" ></text>
+</g>
+<g >
+<title>unlink_chunk (1,003,009 samples, 0.08%)</title><rect x="449.6" y="589" width="0.9" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="452.55" y="599.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::nodeChanged (1,003,009 samples, 0.08%)</title><rect x="15.4" y="765" width="0.9" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="18.44" y="775.5" ></text>
+</g>
+<g >
+<title>QBasicMutex::fastTryUnlock (1,003,009 samples, 0.08%)</title><rect x="541.1" y="701" width="0.9" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="544.09" y="711.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="140.5" y="109" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="143.51" y="119.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (29,087,261 samples, 2.23%)</title><rect x="129.6" y="557" width="26.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="567.5" >Q..</text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1072.2" y="573" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1075.18" y="583.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (14,042,126 samples, 1.08%)</title><rect x="1121.1" y="621" width="12.7" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1124.12" y="631.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="574.6" y="765" width="0.9" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="577.62" y="775.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1176.4" y="685" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1179.41" y="695.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="465.0" y="717" width="0.9" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="467.96" y="727.5" ></text>
+</g>
+<g >
+<title>__GI___pthread_mutex_unlock_usercnt (1,003,009 samples, 0.08%)</title><rect x="1162.8" y="669" width="0.9" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="1165.81" y="679.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="992.4" y="589" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="995.43" y="599.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::setGraphicsPipeline (7,021,063 samples, 0.54%)</title><rect x="451.4" y="701" width="6.3" height="15.0" fill="rgb(217,58,13)" rx="2" ry="2" />
+<text  x="454.37" y="711.5" ></text>
+</g>
+<g >
+<title>__memcmp_avx2_movbe (11,033,099 samples, 0.84%)</title><rect x="1030.5" y="701" width="10.0" height="15.0" fill="rgb(224,91,21)" rx="2" ry="2" />
+<text  x="1033.49" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (11,033,099 samples, 0.84%)</title><rect x="1085.8" y="557" width="9.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1088.78" y="567.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_unlock (1,003,009 samples, 0.08%)</title><rect x="639.9" y="701" width="0.9" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="642.88" y="711.5" ></text>
+</g>
+<g >
+<title>QWaitCondition::wakeOne (3,009,027 samples, 0.23%)</title><rect x="1176.4" y="781" width="2.7" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
+<text  x="1179.41" y="791.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1171.0" y="605" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1173.97" y="615.5" ></text>
+</g>
+<g >
+<title>QCoreApplication::postEvent (2,006,018 samples, 0.15%)</title><rect x="538.4" y="685" width="1.8" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="541.37" y="695.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="1172.8" y="701" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1175.78" y="711.5" ></text>
+</g>
+<g >
+<title>QGlyphRun::~QGlyphRun (1,003,009 samples, 0.08%)</title><rect x="14.5" y="813" width="0.9" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="17.53" y="823.5" ></text>
+</g>
+<g >
+<title>[unknown] (5,015,045 samples, 0.38%)</title><rect x="1073.1" y="509" width="4.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1076.09" y="519.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (2,006,018 samples, 0.15%)</title><rect x="138.7" y="109" width="1.8" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="141.69" y="119.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="637" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="647.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (19,057,171 samples, 1.46%)</title><rect x="131.4" y="413" width="17.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="134.44" y="423.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (5,015,045 samples, 0.38%)</title><rect x="1126.6" y="589" width="4.5" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1129.56" y="599.5" ></text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 0.31%)</title><rect x="1156.5" y="413" width="3.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1159.47" y="423.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1084.9" y="557" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1087.87" y="567.5" ></text>
+</g>
+<g >
+<title>QSGNode::markDirty (4,012,036 samples, 0.31%)</title><rect x="559.2" y="637" width="3.6" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="562.22" y="647.5" ></text>
+</g>
+<g >
+<title>QMetaObject::activate (1,003,009 samples, 0.08%)</title><rect x="116.0" y="733" width="0.9" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="119.04" y="743.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1028.7" y="557" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1031.68" y="567.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="566.5" y="653" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="569.47" y="663.5" ></text>
+</g>
+<g >
+<title>QQuickWindowPrivate::updateDirtyNode (16,048,144 samples, 1.23%)</title><rect x="559.2" y="749" width="14.5" height="15.0" fill="rgb(239,160,38)" rx="2" ry="2" />
+<text  x="562.22" y="759.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (30,090,270 samples, 2.30%)</title><rect x="1068.6" y="685" width="27.1" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1071.56" y="695.5" >[..</text>
+</g>
+<g >
+<title>QRawFont::~QRawFont (1,003,009 samples, 0.08%)</title><rect x="519.3" y="701" width="0.9" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="522.34" y="711.5" ></text>
+</g>
+<g >
+<title>[[vdso]] (1,003,009 samples, 0.08%)</title><rect x="1113.0" y="637" width="0.9" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="1115.96" y="647.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1173.7" y="669" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1176.69" y="679.5" ></text>
+</g>
+<g >
+<title>__pthread_cond_wait_common (2,006,018 samples, 0.15%)</title><rect x="528.4" y="701" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="531.40" y="711.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (37,111,333 samples, 2.84%)</title><rect x="34.5" y="845" width="33.5" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="37.47" y="855.5" >[l..</text>
+</g>
+<g >
+<title>[libqxcb-glx-integration.so] (132,397,188 samples, 10.14%)</title><rect x="1055.9" y="749" width="119.6" height="15.0" fill="rgb(237,147,35)" rx="2" ry="2" />
+<text  x="1058.87" y="759.5" >[libqxcb-glx-i..</text>
+</g>
+<g >
+<title>__GI___libc_write (1,003,009 samples, 0.08%)</title><rect x="539.3" y="653" width="0.9" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="542.28" y="663.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="464.1" y="605" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="467.06" y="615.5" ></text>
+</g>
+<g >
+<title>QSGAbstractRenderer::setProjectionMatrix (1,003,009 samples, 0.08%)</title><rect x="110.6" y="749" width="0.9" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
+<text  x="113.60" y="759.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="948.0" y="429" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="951.02" y="439.5" ></text>
+</g>
+<g >
+<title>QGlyphRun::~QGlyphRun (1,003,009 samples, 0.08%)</title><rect x="562.8" y="669" width="0.9" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="565.84" y="679.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (69,207,621 samples, 5.30%)</title><rect x="1099.4" y="669" width="62.5" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1102.37" y="679.5" >[libnv..</text>
+</g>
+<g >
+<title>xcb_poll_for_special_event (2,006,018 samples, 0.15%)</title><rect x="905.4" y="621" width="1.8" height="15.0" fill="rgb(224,90,21)" rx="2" ry="2" />
+<text  x="908.42" y="631.5" ></text>
+</g>
+<g >
+<title>QOpenGLContext::makeCurrent (3,009,027 samples, 0.23%)</title><rect x="578.2" y="733" width="2.8" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="581.25" y="743.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (7,021,063 samples, 0.54%)</title><rect x="575.5" y="749" width="6.4" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="578.53" y="759.5" ></text>
+</g>
+<g >
+<title>[unknown] (7,021,063 samples, 0.54%)</title><rect x="1071.3" y="589" width="6.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1074.27" y="599.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (31,093,279 samples, 2.38%)</title><rect x="129.6" y="605" width="28.1" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="615.5" >Q..</text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (23,069,207 samples, 1.77%)</title><rect x="294.6" y="685" width="20.8" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="297.58" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1076.7" y="477" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1079.71" y="487.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (13,039,117 samples, 1.00%)</title><rect x="438.7" y="669" width="11.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="441.68" y="679.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="992.4" y="573" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="995.43" y="583.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="31.8" y="797" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="34.75" y="807.5" ></text>
+</g>
+<g >
+<title>[libQt6Core.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="465.9" y="733" width="0.9" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="468.87" y="743.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="153.2" y="525" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="156.20" y="535.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (154,463,386 samples, 11.83%)</title><rect x="834.7" y="685" width="139.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="837.73" y="695.5" >[libnvidia-glcore..</text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (19,057,171 samples, 1.46%)</title><rect x="131.4" y="333" width="17.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="134.44" y="343.5" ></text>
+</g>
+<g >
+<title>operator new (1,003,009 samples, 0.08%)</title><rect x="566.5" y="637" width="0.9" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="569.47" y="647.5" ></text>
+</g>
+<g >
+<title>[libQt6Core.so.6.4.2] (33,099,297 samples, 2.53%)</title><rect x="525.7" y="765" width="29.9" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="528.68" y="775.5" >[l..</text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (2,006,018 samples, 0.15%)</title><rect x="214.8" y="685" width="1.8" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="217.82" y="695.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (2,006,018 samples, 0.15%)</title><rect x="141.4" y="125" width="1.8" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="144.41" y="135.5" ></text>
+</g>
+<g >
+<title>[libqxcb-glx-integration.so] (2,006,018 samples, 0.15%)</title><rect x="579.2" y="717" width="1.8" height="15.0" fill="rgb(237,147,35)" rx="2" ry="2" />
+<text  x="582.16" y="727.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="479.5" y="717" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="482.46" y="727.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (2,006,018 samples, 0.15%)</title><rect x="149.6" y="461" width="1.8" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="152.57" y="471.5" ></text>
+</g>
+<g >
+<title>QMetaType::QMetaType (1,003,009 samples, 0.08%)</title><rect x="540.2" y="685" width="0.9" height="15.0" fill="rgb(215,48,11)" rx="2" ry="2" />
+<text  x="543.18" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (9,027,081 samples, 0.69%)</title><rect x="1151.9" y="429" width="8.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1154.94" y="439.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (7,021,063 samples, 0.54%)</title><rect x="137.8" y="205" width="6.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="140.79" y="215.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (36,108,324 samples, 2.76%)</title><rect x="35.4" y="781" width="32.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="38.38" y="791.5" >[l..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="532.0" y="525" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="535.03" y="535.5" ></text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1090.3" y="381" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1093.31" y="391.5" ></text>
+</g>
+<g >
+<title>QByteArray::clear (1,003,009 samples, 0.08%)</title><rect x="17.3" y="717" width="0.9" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="20.25" y="727.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="90.7" y="749" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="93.66" y="759.5" ></text>
+</g>
+<g >
+<title>QMetaObject::activate (1,003,009 samples, 0.08%)</title><rect x="114.2" y="733" width="0.9" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="117.22" y="743.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1173.7" y="637" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1176.69" y="647.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (24,072,216 samples, 1.84%)</title><rect x="130.5" y="493" width="21.8" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="133.54" y="503.5" >Q..</text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="765" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="775.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (32,096,288 samples, 2.46%)</title><rect x="129.6" y="653" width="29.0" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="663.5" >QS..</text>
+</g>
+<g >
+<title>__GI___pthread_disable_asynccancel (1,003,009 samples, 0.08%)</title><rect x="529.3" y="637" width="0.9" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="532.31" y="647.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="1167.3" y="685" width="0.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1170.34" y="695.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="1129.3" y="557" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1132.28" y="567.5" ></text>
+</g>
+<g >
+<title>[libQt6Core.so.6.4.2] (8,024,072 samples, 0.61%)</title><rect x="1179.1" y="781" width="7.3" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="1182.12" y="791.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1131.1" y="573" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1134.09" y="583.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned_erms (2,006,018 samples, 0.15%)</title><rect x="972.5" y="669" width="1.8" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="975.49" y="679.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="157.7" y="621" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="160.73" y="631.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="992.4" y="621" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="995.43" y="631.5" ></text>
+</g>
+<g >
+<title>operator== (8,024,072 samples, 0.61%)</title><rect x="315.4" y="685" width="7.3" height="15.0" fill="rgb(216,53,12)" rx="2" ry="2" />
+<text  x="318.42" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (29,087,261 samples, 2.23%)</title><rect x="1133.8" y="589" width="26.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1136.81" y="599.5" >[..</text>
+</g>
+<g >
+<title>QXcbWindow::needsSync (1,003,009 samples, 0.08%)</title><rect x="1055.9" y="733" width="0.9" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="1058.87" y="743.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="397" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="407.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="99.7" y="637" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="102.72" y="647.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="70.7" y="653" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="73.72" y="663.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="701" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="711.5" ></text>
+</g>
+<g >
+<title>__GI___libc_free (1,003,009 samples, 0.08%)</title><rect x="924.5" y="621" width="0.9" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="927.45" y="631.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::uploadMergedElement (16,048,144 samples, 1.23%)</title><rect x="381.6" y="701" width="14.5" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="384.58" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="464.1" y="653" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="467.06" y="663.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="493" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="503.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (15,045,135 samples, 1.15%)</title><rect x="356.2" y="701" width="13.6" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="359.21" y="711.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (5,015,045 samples, 0.38%)</title><rect x="516.6" y="733" width="4.6" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="519.62" y="743.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="70.7" y="637" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="73.72" y="647.5" ></text>
+</g>
+<g >
+<title>QSGTexture::setFiltering (5,015,045 samples, 0.38%)</title><rect x="306.4" y="669" width="4.5" height="15.0" fill="rgb(216,53,12)" rx="2" ry="2" />
+<text  x="309.36" y="679.5" ></text>
+</g>
+<g >
+<title>std::atomic&lt;QMutexPrivate*&gt;::compare_exchange_strong (1,003,009 samples, 0.08%)</title><rect x="541.1" y="653" width="0.9" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="544.09" y="663.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1131.1" y="509" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1134.09" y="519.5" ></text>
+</g>
+<g >
+<title>[unknown] (19,057,171 samples, 1.46%)</title><rect x="1142.9" y="477" width="17.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1145.87" y="487.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="138.7" y="61" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="141.69" y="71.5" ></text>
+</g>
+<g >
+<title>[libqxcb-glx-integration.so] (1,003,009 samples, 0.08%)</title><rect x="90.7" y="845" width="0.9" height="15.0" fill="rgb(237,147,35)" rx="2" ry="2" />
+<text  x="93.66" y="855.5" ></text>
+</g>
+<g >
+<title>std::mutex::unlock (3,009,027 samples, 0.23%)</title><rect x="530.2" y="701" width="2.7" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="533.22" y="711.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="146.9" y="269" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="149.85" y="279.5" ></text>
+</g>
+<g >
+<title>QSGRenderer::addNodesToPreprocess (1,003,009 samples, 0.08%)</title><rect x="16.3" y="749" width="1.0" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="19.34" y="759.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1093.9" y="333" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1096.93" y="343.5" ></text>
+</g>
+<g >
+<title>___pthread_cond_wait (2,006,018 samples, 0.15%)</title><rect x="528.4" y="717" width="1.8" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="531.40" y="727.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="1169.2" y="685" width="0.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1172.16" y="695.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="1185.5" y="765" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="1188.47" y="775.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (76,228,684 samples, 5.84%)</title><rect x="885.5" y="669" width="68.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="888.48" y="679.5" >[libnvi..</text>
+</g>
+<g >
+<title>__GI___pthread_mutex_unlock_usercnt (3,009,027 samples, 0.23%)</title><rect x="530.2" y="653" width="2.7" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="533.22" y="663.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="555.6" y="765" width="0.9" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="558.59" y="775.5" ></text>
+</g>
+<g >
+<title>QHighDpiScaling::rawScaleFactor (1,003,009 samples, 0.08%)</title><rect x="523.9" y="717" width="0.9" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="526.87" y="727.5" ></text>
+</g>
+<g >
+<title>QSGDistanceFieldGlyphCache::glyphData (1,003,009 samples, 0.08%)</title><rect x="19.1" y="765" width="0.9" height="15.0" fill="rgb(242,171,40)" rx="2" ry="2" />
+<text  x="22.06" y="775.5" ></text>
+</g>
+<g >
+<title>QHighDpiScaling::scaleAndOrigin (2,006,018 samples, 0.15%)</title><rect x="523.9" y="749" width="1.8" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="526.87" y="759.5" ></text>
+</g>
+<g >
+<title>QSGDistanceFieldGlyphCache::populate (1,003,009 samples, 0.08%)</title><rect x="19.1" y="781" width="0.9" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="22.06" y="791.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (6,018,054 samples, 0.46%)</title><rect x="1125.7" y="605" width="5.4" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1128.65" y="615.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="386.1" y="685" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="389.11" y="695.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="70.7" y="589" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="73.72" y="599.5" ></text>
+</g>
+<g >
+<title>[libQt6Core.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="845" width="0.9" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="36.56" y="855.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (19,057,171 samples, 1.46%)</title><rect x="131.4" y="397" width="17.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="134.44" y="407.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="685" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="695.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::prepareRenderPass (311,935,799 samples, 23.89%)</title><rect x="119.7" y="733" width="281.8" height="15.0" fill="rgb(241,170,40)" rx="2" ry="2" />
+<text  x="122.66" y="743.5" >QSGBatchRenderer::Renderer::prepareRe..</text>
+</g>
+<g >
+<title>QMatrix4x4::ortho (3,009,027 samples, 0.23%)</title><rect x="107.9" y="749" width="2.7" height="15.0" fill="rgb(238,156,37)" rx="2" ry="2" />
+<text  x="110.88" y="759.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="304.5" y="653" width="1.0" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="307.55" y="663.5" ></text>
+</g>
+<g >
+<title>QThreadStorageData::get (1,003,009 samples, 0.08%)</title><rect x="612.7" y="701" width="0.9" height="15.0" fill="rgb(222,80,19)" rx="2" ry="2" />
+<text  x="615.69" y="711.5" ></text>
+</g>
+<g >
+<title>QSGPlainTexture::rhiTexture (1,003,009 samples, 0.08%)</title><rect x="272.8" y="685" width="0.9" height="15.0" fill="rgb(251,211,50)" rx="2" ry="2" />
+<text  x="275.83" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="948.0" y="477" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="951.02" y="487.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="148.7" y="445" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="151.66" y="455.5" ></text>
+</g>
+<g >
+<title>QSGNode::markDirty (1,003,009 samples, 0.08%)</title><rect x="520.2" y="701" width="1.0" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="523.25" y="711.5" ></text>
+</g>
+<g >
+<title>[libQt6XcbQpa.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="523.9" y="701" width="0.9" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="526.87" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (29,087,261 samples, 2.23%)</title><rect x="1133.8" y="573" width="26.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1136.81" y="583.5" >[..</text>
+</g>
+<g >
+<title>QSGPlainTexture::QSGPlainTexture (2,006,018 samples, 0.15%)</title><rect x="544.7" y="669" width="1.8" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="547.72" y="679.5" ></text>
+</g>
+<g >
+<title>xcb_send_request@plt (1,003,009 samples, 0.08%)</title><rect x="1081.2" y="637" width="1.0" height="15.0" fill="rgb(233,129,31)" rx="2" ry="2" />
+<text  x="1084.24" y="647.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="99.7" y="669" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="102.72" y="679.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1131.1" y="589" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1134.09" y="599.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="953.5" y="525" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="956.46" y="535.5" ></text>
+</g>
+<g >
+<title>__GI___pthread_mutex_unlock_usercnt (3,009,027 samples, 0.23%)</title><rect x="1027.8" y="685" width="2.7" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="1030.77" y="695.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (13,039,117 samples, 1.00%)</title><rect x="20.9" y="813" width="11.8" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="23.88" y="823.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="749" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="759.5" ></text>
+</g>
+<g >
+<title>QRhiCommandBuffer::resourceUpdate (1,003,009 samples, 0.08%)</title><rect x="126.9" y="717" width="0.9" height="15.0" fill="rgb(250,211,50)" rx="2" ry="2" />
+<text  x="129.91" y="727.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (2,006,018 samples, 0.15%)</title><rect x="613.6" y="717" width="1.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="616.59" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1170.1" y="653" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1173.06" y="663.5" ></text>
+</g>
+<g >
+<title>lll_mutex_unlock_optimized (6,018,054 samples, 0.46%)</title><rect x="1042.3" y="685" width="5.4" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="1045.27" y="695.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_unlock (7,021,063 samples, 0.54%)</title><rect x="1041.4" y="717" width="6.3" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="1044.37" y="727.5" ></text>
+</g>
+<g >
+<title>xcb_present_pixmap (5,015,045 samples, 0.38%)</title><rect x="1077.6" y="653" width="4.6" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="1080.62" y="663.5" ></text>
+</g>
+<g >
+<title>[unknown] (23,069,207 samples, 1.77%)</title><rect x="1139.2" y="509" width="20.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1142.25" y="519.5" ></text>
+</g>
+<g >
+<title>[libQt6Core.so.6.4.2] (4,012,036 samples, 0.31%)</title><rect x="537.5" y="701" width="3.6" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="540.47" y="711.5" ></text>
+</g>
+<g >
+<title>[libxcb.so.1.1.0] (14,042,126 samples, 1.08%)</title><rect x="1083.1" y="621" width="12.6" height="15.0" fill="rgb(226,98,23)" rx="2" ry="2" />
+<text  x="1086.06" y="631.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (3,009,027 samples, 0.23%)</title><rect x="68.9" y="813" width="2.7" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="71.91" y="823.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="653" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="663.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="948.0" y="461" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="951.02" y="471.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderListsFromScratch (3,009,027 samples, 0.23%)</title><rect x="158.6" y="717" width="2.8" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="161.63" y="727.5" ></text>
+</g>
+<g >
+<title>QWindow::devicePixelRatio (4,012,036 samples, 0.31%)</title><rect x="522.1" y="765" width="3.6" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="525.06" y="775.5" ></text>
+</g>
+<g >
+<title>QRhiViewport::QRhiViewport (2,006,018 samples, 0.15%)</title><rect x="127.8" y="717" width="1.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="130.82" y="727.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::updateMaterialDynamicData (93,279,837 samples, 7.14%)</title><rect x="238.4" y="701" width="84.3" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="241.39" y="711.5" >QSGBatchR..</text>
+</g>
+<g >
+<title>[unknown] (4,012,036 samples, 0.31%)</title><rect x="1044.1" y="557" width="3.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1047.09" y="567.5" ></text>
+</g>
+<g >
+<title>[unknown] (7,021,063 samples, 0.54%)</title><rect x="1071.3" y="621" width="6.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1074.27" y="631.5" ></text>
+</g>
+<g >
+<title>QSurface::surfaceClass (1,003,009 samples, 0.08%)</title><rect x="607.3" y="733" width="0.9" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="610.25" y="743.5" ></text>
+</g>
+<g >
+<title>all (1,305,917,718 samples, 100%)</title><rect x="10.0" y="861" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="871.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (4,012,036 samples, 0.31%)</title><rect x="1168.2" y="717" width="3.7" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1171.25" y="727.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_unlock (2,006,018 samples, 0.15%)</title><rect x="952.5" y="653" width="1.9" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="955.55" y="663.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::beginRenderPass (3,009,027 samples, 0.23%)</title><rect x="116.9" y="733" width="2.8" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="119.94" y="743.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="948.0" y="573" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="951.02" y="583.5" ></text>
+</g>
+<g >
+<title>QRhi::nextResourceUpdateBatch (4,012,036 samples, 0.31%)</title><rect x="123.3" y="717" width="3.6" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="126.29" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="99.7" y="621" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="102.72" y="631.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (6,018,054 samples, 0.46%)</title><rect x="396.1" y="717" width="5.4" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="399.08" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="948.0" y="509" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="951.02" y="519.5" ></text>
+</g>
+<g >
+<title>std::unique_lock&lt;std::mutex&gt;::unlock (3,009,027 samples, 0.23%)</title><rect x="530.2" y="717" width="2.7" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="533.22" y="727.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (36,108,324 samples, 2.76%)</title><rect x="35.4" y="749" width="32.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="38.38" y="759.5" >[l..</text>
+</g>
+<g >
+<title>QTimerInfoList::timerWait (1,003,009 samples, 0.08%)</title><rect x="97.0" y="701" width="0.9" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
+<text  x="100.00" y="711.5" ></text>
+</g>
+<g >
+<title>QSGVertexColorMaterial::type (1,003,009 samples, 0.08%)</title><rect x="355.3" y="701" width="0.9" height="15.0" fill="rgb(251,216,51)" rx="2" ry="2" />
+<text  x="358.30" y="711.5" ></text>
+</g>
+<g >
+<title>[unknown] (8,024,072 samples, 0.61%)</title><rect x="1088.5" y="397" width="7.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1091.49" y="407.5" ></text>
+</g>
+<g >
+<title>[unknown] (13,039,117 samples, 1.00%)</title><rect x="1148.3" y="461" width="11.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1151.31" y="471.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_unlock (1,003,009 samples, 0.08%)</title><rect x="918.1" y="589" width="0.9" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="921.11" y="599.5" ></text>
+</g>
+<g >
+<title>QMetaObject::methodOffset (6,018,054 samples, 0.46%)</title><rect x="1179.1" y="765" width="5.5" height="15.0" fill="rgb(232,124,29)" rx="2" ry="2" />
+<text  x="1182.12" y="775.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1028.7" y="589" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1031.68" y="599.5" ></text>
+</g>
+<g >
+<title>__pthread_rwlock_wrlock_full64 (1,003,009 samples, 0.08%)</title><rect x="90.7" y="669" width="0.9" height="15.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="93.66" y="679.5" ></text>
+</g>
+<g >
+<title>QRhiCommandBuffer::setGraphicsPipeline (2,006,018 samples, 0.15%)</title><rect x="451.4" y="685" width="1.8" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="454.37" y="695.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_lock (25,075,225 samples, 1.92%)</title><rect x="926.3" y="637" width="22.6" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="929.27" y="647.5" >_..</text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (5,015,045 samples, 0.38%)</title><rect x="138.7" y="141" width="4.5" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="141.69" y="151.5" ></text>
+</g>
+<g >
+<title>__GI___ioctl (29,087,261 samples, 2.23%)</title><rect x="1133.8" y="605" width="26.3" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="1136.81" y="615.5" >_..</text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (5,015,045 samples, 0.38%)</title><rect x="86.1" y="797" width="4.6" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="89.13" y="807.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="541" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="551.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1176.4" y="733" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1179.41" y="743.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (51,153,459 samples, 3.92%)</title><rect x="1113.9" y="637" width="46.2" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1116.87" y="647.5" >[lib..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="971.6" y="605" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="974.58" y="615.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::invalidateAndRecycleBatch (3,009,027 samples, 0.23%)</title><rect x="158.6" y="701" width="2.8" height="15.0" fill="rgb(238,156,37)" rx="2" ry="2" />
+<text  x="161.63" y="711.5" ></text>
+</g>
+<g >
+<title>[libQt6Core.so.6.4.2] (2,006,018 samples, 0.15%)</title><rect x="96.1" y="717" width="1.8" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="99.10" y="727.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (1,003,009 samples, 0.08%)</title><rect x="138.7" y="93" width="0.9" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="141.69" y="103.5" ></text>
+</g>
+<g >
+<title>QSGPlainTexture::~QSGPlainTexture (6,018,054 samples, 0.46%)</title><rect x="550.2" y="701" width="5.4" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="553.15" y="711.5" ></text>
+</g>
+<g >
+<title>__GI___libc_write (1,003,009 samples, 0.08%)</title><rect x="539.3" y="637" width="0.9" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="542.28" y="647.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (24,072,216 samples, 1.84%)</title><rect x="10.9" y="829" width="21.8" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="13.91" y="839.5" >[..</text>
+</g>
+<g >
+<title>QSGRhiLayer::metaObject (2,006,018 samples, 0.15%)</title><rect x="473.1" y="701" width="1.8" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="476.12" y="711.5" ></text>
+</g>
+<g >
+<title>__futex_abstimed_wait_common64 (2,006,018 samples, 0.15%)</title><rect x="528.4" y="653" width="1.8" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
+<text  x="531.40" y="663.5" ></text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1042.3" y="637" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1045.27" y="647.5" ></text>
+</g>
+<g >
+<title>lll_mutex_unlock_optimized (3,009,027 samples, 0.23%)</title><rect x="530.2" y="637" width="2.7" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="533.22" y="647.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,215,646,908 samples, 93.09%)</title><rect x="91.6" y="797" width="1098.4" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="94.57" y="807.5" >[libQt6Quick.so.6.4.2]</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1084.9" y="589" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1087.87" y="599.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (17,051,153 samples, 1.31%)</title><rect x="132.4" y="285" width="15.4" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="135.35" y="295.5" ></text>
+</g>
+<g >
+<title>QSGRhiSupport::toRhiTextureFormatFromGL (1,003,009 samples, 0.08%)</title><rect x="549.2" y="653" width="1.0" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="552.25" y="663.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::setActiveRhiShader (2,006,018 samples, 0.15%)</title><rect x="216.6" y="701" width="1.8" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="219.64" y="711.5" ></text>
+</g>
+<g >
+<title>QQuickText::updatePaintNode (16,048,144 samples, 1.23%)</title><rect x="559.2" y="733" width="14.5" height="15.0" fill="rgb(228,108,25)" rx="2" ry="2" />
+<text  x="562.22" y="743.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (3,009,027 samples, 0.23%)</title><rect x="1187.3" y="781" width="2.7" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="1190.28" y="791.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (15,045,135 samples, 1.15%)</title><rect x="1068.6" y="669" width="13.6" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1071.56" y="679.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (7,021,063 samples, 0.54%)</title><rect x="325.4" y="685" width="6.3" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="328.39" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="99.7" y="717" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="102.72" y="727.5" ></text>
+</g>
+<g >
+<title>QSGRenderer::renderScene (1,003,009 samples, 0.08%)</title><rect x="33.6" y="797" width="0.9" height="15.0" fill="rgb(254,225,54)" rx="2" ry="2" />
+<text  x="36.56" y="807.5" ></text>
+</g>
+<g >
+<title>__GI___lll_lock_wake (2,006,018 samples, 0.15%)</title><rect x="1028.7" y="653" width="1.8" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="1031.68" y="663.5" ></text>
+</g>
+<g >
+<title>[unknown] (10,030,090 samples, 0.77%)</title><rect x="1086.7" y="477" width="9.0" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1089.68" y="487.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="530.2" y="605" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="533.22" y="615.5" ></text>
+</g>
+<g >
+<title>QHighDpiScaling::roundScaleFactor (1,003,009 samples, 0.08%)</title><rect x="524.8" y="717" width="0.9" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="527.78" y="727.5" ></text>
+</g>
+<g >
+<title>gz::gui::plugins::TextureNode::PrepareNode (25,075,225 samples, 1.92%)</title><rect x="532.9" y="749" width="22.7" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="535.93" y="759.5" >g..</text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (65,195,585 samples, 4.99%)</title><rect x="1102.1" y="653" width="58.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1105.09" y="663.5" >[libnv..</text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (13,039,117 samples, 1.00%)</title><rect x="628.1" y="685" width="11.8" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="631.10" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="539.3" y="605" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="542.28" y="615.5" ></text>
+</g>
+<g >
+<title>QSGMaterialShader::flags (1,003,009 samples, 0.08%)</title><rect x="324.5" y="685" width="0.9" height="15.0" fill="rgb(220,70,16)" rx="2" ry="2" />
+<text  x="327.49" y="695.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1028.7" y="573" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1031.68" y="583.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::recordRenderPass (71,213,639 samples, 5.45%)</title><rect x="401.5" y="733" width="64.4" height="15.0" fill="rgb(215,48,11)" rx="2" ry="2" />
+<text  x="404.52" y="743.5" >QSGBatc..</text>
+</g>
+<g >
+<title>_int_free (1,003,009 samples, 0.08%)</title><rect x="448.6" y="621" width="1.0" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="451.65" y="631.5" ></text>
+</g>
+<g >
+<title>___pthread_rwlock_unlock (1,003,009 samples, 0.08%)</title><rect x="1130.2" y="573" width="0.9" height="15.0" fill="rgb(226,98,23)" rx="2" ry="2" />
+<text  x="1133.18" y="583.5" ></text>
+</g>
+<g >
+<title>__GI___libc_free (1,003,009 samples, 0.08%)</title><rect x="581.0" y="733" width="0.9" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="583.97" y="743.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1084.9" y="509" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1087.87" y="519.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="953.5" y="541" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="956.46" y="551.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (2,006,018 samples, 0.15%)</title><rect x="571.9" y="653" width="1.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="574.90" y="663.5" ></text>
+</g>
+<g >
+<title>QSGNode::isSubtreeBlocked (1,003,009 samples, 0.08%)</title><rect x="143.2" y="141" width="0.9" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="146.23" y="151.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="717" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1029.6" y="509" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1032.59" y="519.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="28.1" y="749" width="0.9" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="31.13" y="759.5" ></text>
+</g>
+<g >
+<title>QSGDefaultRenderContext::distanceFieldGlyphCache (1,003,009 samples, 0.08%)</title><rect x="17.3" y="781" width="0.9" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="20.25" y="791.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="1171.9" y="717" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1174.87" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 0.08%)</title><rect x="1084.9" y="573" width="0.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1087.87" y="583.5" ></text>
+</g>
+<g >
+<title>QSGMaterialShader::RenderState::combinedMatrix (1,003,009 samples, 0.08%)</title><rect x="304.5" y="669" width="1.0" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="307.55" y="679.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="1172.8" y="685" width="0.9" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1175.78" y="695.5" ></text>
+</g>
+<g >
+<title>[libQt6Gui.so.6.4.2] (505,516,536 samples, 38.71%)</title><rect x="592.7" y="749" width="456.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="595.75" y="759.5" >[libQt6Gui.so.6.4.2]</text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (5,015,045 samples, 0.38%)</title><rect x="68.0" y="845" width="4.5" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="71.00" y="855.5" ></text>
+</g>
+<g >
+<title>[unknown] (9,027,081 samples, 0.69%)</title><rect x="1087.6" y="461" width="8.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1090.59" y="471.5" ></text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 0.15%)</title><rect x="1158.3" y="397" width="1.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1161.28" y="407.5" ></text>
+</g>
+<g >
+<title>[libQt6Quick.so.6.4.2] (1,003,009 samples, 0.08%)</title><rect x="33.6" y="733" width="0.9" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="36.56" y="743.5" ></text>
+</g>
+<g >
+<title>[unknown] (11,033,099 samples, 0.84%)</title><rect x="1085.8" y="573" width="9.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1088.78" y="583.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="70.7" y="573" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="73.72" y="583.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (19,057,171 samples, 1.46%)</title><rect x="131.4" y="381" width="17.3" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="134.44" y="391.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (20,060,180 samples, 1.54%)</title><rect x="72.5" y="829" width="18.2" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="75.53" y="839.5" ></text>
+</g>
+<g >
+<title>__GI___poll (4,012,036 samples, 0.31%)</title><rect x="98.8" y="733" width="3.6" height="15.0" fill="rgb(228,110,26)" rx="2" ry="2" />
+<text  x="101.82" y="743.5" ></text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.23%)</title><rect x="1176.4" y="653" width="2.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1179.41" y="663.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::cleanupBatches (6,018,054 samples, 0.46%)</title><rect x="161.4" y="717" width="5.4" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="164.35" y="727.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (1,003,009 samples, 0.08%)</title><rect x="1129.3" y="573" width="0.9" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1132.28" y="583.5" ></text>
+</g>
+<g >
+<title>QSGPlainTexture::setTexture (1,003,009 samples, 0.08%)</title><rect x="546.5" y="653" width="0.9" height="15.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="549.53" y="663.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (3,009,027 samples, 0.23%)</title><rect x="68.9" y="717" width="2.7" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="71.91" y="727.5" ></text>
+</g>
+<g >
+<title>QTextEngine::itemize (1,003,009 samples, 0.08%)</title><rect x="32.7" y="845" width="0.9" height="15.0" fill="rgb(205,1,0)" rx="2" ry="2" />
+<text  x="35.66" y="855.5" ></text>
+</g>
+<g >
+<title>futex_wait (2,006,018 samples, 0.15%)</title><rect x="947.1" y="589" width="1.8" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="950.11" y="599.5" ></text>
+</g>
+<g >
+<title>__GI___poll (2,006,018 samples, 0.15%)</title><rect x="1170.1" y="685" width="1.8" height="15.0" fill="rgb(228,110,26)" rx="2" ry="2" />
+<text  x="1173.06" y="695.5" ></text>
+</g>
+<g >
+<title>[libGLX_nvidia.so.580.159.03] (10,030,090 samples, 0.77%)</title><rect x="1068.6" y="653" width="9.0" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1071.56" y="663.5" ></text>
+</g>
+<g >
+<title>QSGRenderer::preprocess (60,180,540 samples, 4.61%)</title><rect x="466.8" y="749" width="54.4" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="469.77" y="759.5" >QSGRe..</text>
+</g>
+<g >
+<title>std::__atomic_base&lt;QMutexPrivate*&gt;::compare_exchange_strong (1,003,009 samples, 0.08%)</title><rect x="541.1" y="637" width="0.9" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="544.09" y="647.5" ></text>
+</g>
+<g >
+<title>QThread::currentThread (1,003,009 samples, 0.08%)</title><rect x="578.2" y="717" width="1.0" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="581.25" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (11,033,099 samples, 0.84%)</title><rect x="1085.8" y="509" width="9.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1088.78" y="519.5" ></text>
+</g>
+<g >
+<title>gz::gui::plugins::TextureNode::TextureInUse (4,012,036 samples, 0.31%)</title><rect x="537.5" y="733" width="3.6" height="15.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="540.47" y="743.5" ></text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::renderMergedBatch (69,207,621 samples, 5.30%)</title><rect x="402.4" y="717" width="62.6" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="405.43" y="727.5" >QSGBat..</text>
+</g>
+<g >
+<title>QSGBatchRenderer::Renderer::buildRenderLists (26,078,234 samples, 2.00%)</title><rect x="129.6" y="525" width="23.6" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="132.63" y="535.5" >Q..</text>
+</g>
+<g >
+<title>QSGMaterial::setFlag (1,003,009 samples, 0.08%)</title><rect x="534.7" y="717" width="1.0" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="537.75" y="727.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.580.159.03] (10,030,090 samples, 0.77%)</title><rect x="81.6" y="813" width="9.1" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="84.60" y="823.5" ></text>
+</g>
+<g >
+<title>__GI___lll_lock_wake (3,009,027 samples, 0.23%)</title><rect x="530.2" y="621" width="2.7" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="533.22" y="631.5" ></text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1042.3" y="621" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1045.27" y="631.5" ></text>
+</g>
+<g >
+<title>__GI___libc_malloc (1,003,009 samples, 0.08%)</title><rect x="449.6" y="621" width="0.9" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="452.55" y="631.5" ></text>
+</g>
+<g >
+<title>[unknown] (6,018,054 samples, 0.46%)</title><rect x="1072.2" y="557" width="5.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1075.18" y="567.5" ></text>
+</g>
+<g >
+<title>QRect::operator&amp; (3,009,027 samples, 0.23%)</title><rect x="228.4" y="685" width="2.7" height="15.0" fill="rgb(215,48,11)" rx="2" ry="2" />
+<text  x="231.42" y="695.5" ></text>
+</g>
+</g>
+</svg>

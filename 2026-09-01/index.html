@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Gazebo Server Profiling &mdash; 2026-09-01 (PR #3447 + Zenoh SHM)</title>
+  <title>Gazebo Profiling &mdash; 2026-09-01 (PR #3447 + Zenoh SHM, server and GUI)</title>
   <style>
     body { font-family: 'Palatino', 'Georgia', serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color: #333; }
     h1 { color: #333366; border-bottom: 2px solid #333366; padding-bottom: 10px; }
@@ -19,10 +19,12 @@
 </head>
 <body>
   <p class="back"><a href="../">&larr; All benchmark runs</a></p>
-  <h1>Gazebo Server Profiling &mdash; 2026-09-01</h1>
+  <h1>Gazebo Profiling &mdash; 2026-09-01 (server and GUI)</h1>
 
-  <p class="pdf">&#128196; <a href="findings_report.pdf">Full findings report (PDF)</a>
-  <span class="note">(<a href="findings_report.md">Markdown source</a>)</span></p>
+  <p class="pdf">&#128196; <a href="findings_report.pdf">Server findings report (PDF)</a>
+  <span class="note">(<a href="findings_report.md">Markdown source</a>)</span> &middot;
+  &#128196; <a href="findings_report_gui.pdf">GUI findings report (PDF)</a>
+  <span class="note">(<a href="findings_report_gui.md">Markdown source</a>, <a href="#gui">GUI section below</a>)</span></p>
 
   <p class="note">
     Profiling of the headless Gazebo <strong>server</strong> (<code>gz-sim-main</code>) on
@@ -90,6 +92,60 @@
     <tr><td>gpu_lidar_sensor</td><td>2.59</td><td>0.27%</td><td>6.6%</td><td><a href="cache/gpu_lidar_sensor_cache_stats.txt">txt</a></td></tr>
     <tr><td>sensors_demo</td><td>2.65</td><td>0.73%</td><td>39.0%</td><td><a href="cache/sensors_demo_cache_stats.txt">txt</a></td></tr>
     <tr><td>moving_robots_and_sensors</td><td>2.47</td><td>0.79%</td><td>37.0%</td><td><a href="cache/moving_robots_and_sensors_cache_stats.txt">txt</a></td></tr>
+  </table>
+
+
+  <h2 id="gui">GUI Process Profiling</h2>
+  <p class="pdf">&#128196; <a href="findings_report_gui.pdf">GUI findings report (PDF)</a>
+  <span class="note">(<a href="findings_report_gui.md">Markdown source</a>)</span></p>
+  <p class="note">Same workspace and date; <code>perf</code> attached to the GUI client (<code>gz-sim-gui-client</code>) with the
+  simulation playing (<code>gz sim -r</code>), rendering on the NVIDIA GPU via PRIME offload, server and GUI on Zenoh with SHM.
+  For <code>moving_robots_and_sensors</code> the twelve sensor subscribers and the vehicle/arm commands are applied as in the server run.</p>
+
+  <h3>GUI Runtime Flamegraphs (30 s, all GUI threads)</h3>
+  <table>
+    <tr><th>World</th><th>Scene</th><th>GUI cores</th><th>Render thread</th><th>Qt main</th><th>Zenoh threads</th><th>Flamegraph</th><th>Subsystems</th></tr>
+    <tr><td>shapes</td><td>idle baseline, six primitives</td><td>0.15</td><td>66%</td><td>10%</td><td>2.5%</td><td><a href="gui/runtime/shapes.svg">Open</a></td><td><a href="gui/runtime/shapes_gui_analysis.txt">txt</a></td></tr>
+    <tr><td>3k_shapes_static</td><td>3000 visuals, nothing moves</td><td>1.04</td><td>89%</td><td>6%</td><td>0.6%</td><td><a href="gui/runtime/3k_shapes_static.svg">Open</a></td><td><a href="gui/runtime/3k_shapes_static_gui_analysis.txt">txt</a></td></tr>
+    <tr><td>3k_shapes_dynamic</td><td>3000 visuals, all moving</td><td>0.81</td><td>88%</td><td>7%</td><td>0.6%</td><td><a href="gui/runtime/3k_shapes_dynamic.svg">Open</a></td><td><a href="gui/runtime/3k_shapes_dynamic_gui_analysis.txt">txt</a></td></tr>
+    <tr><td>jetty</td><td>complex meshes and textures</td><td>0.49</td><td>75%</td><td>10%</td><td>5.3%</td><td><a href="gui/runtime/jetty.svg">Open</a></td><td><a href="gui/runtime/jetty_gui_analysis.txt">txt</a></td></tr>
+    <tr><td>moving_robots_and_sensors</td><td>PR #3846: small moving scene, 2.4 kHz state stream</td><td>0.44</td><td>27%</td><td>34%</td><td>25.7%</td><td><a href="gui/runtime/moving_robots_and_sensors.svg">Open</a></td><td><a href="gui/runtime/moving_robots_and_sensors_gui_analysis.txt">txt</a></td></tr>
+  </table>
+
+  <h3>GUI Per Thread Flamegraphs</h3>
+  <table>
+    <tr><th>World</th><th>Render thread</th><th>Qt main thread</th><th>Largest Zenoh thread</th><th>All threads</th></tr>
+    <tr><td>shapes</td><td><a href="gui/threads/shapes_thread_gz::gui::plugin_945581.svg">66%</a></td><td><a href="gui/threads/shapes_thread_gz-sim-gui-clie_945497.svg">10%</a></td><td><a href="gui/threads/shapes_thread_rx-1_945512.svg">rx-1 1.2%</a></td><td><a href="gui/threads/shapes_threads.tsv">tsv</a></td></tr>
+    <tr><td>3k_shapes_static</td><td><a href="gui/threads/3k_shapes_static_thread_gz::gui::plugin_946004.svg">89%</a></td><td><a href="gui/threads/3k_shapes_static_thread_gz-sim-gui-clie_945921.svg">6%</a></td><td><a href="gui/threads/3k_shapes_static_thread_rx-2_945936.svg">rx-2 0.3%</a></td><td><a href="gui/threads/3k_shapes_static_threads.tsv">tsv</a></td></tr>
+    <tr><td>3k_shapes_dynamic</td><td><a href="gui/threads/3k_shapes_dynamic_thread_gz::gui::plugin_946413.svg">88%</a></td><td><a href="gui/threads/3k_shapes_dynamic_thread_gz-sim-gui-clie_946330.svg">7%</a></td><td><a href="gui/threads/3k_shapes_dynamic_thread_rx-0_946345.svg">rx-0 0.5%</a></td><td><a href="gui/threads/3k_shapes_dynamic_threads.tsv">tsv</a></td></tr>
+    <tr><td>jetty</td><td><a href="gui/threads/jetty_thread_gz::gui::plugin_946887.svg">75%</a></td><td><a href="gui/threads/jetty_thread_gz-sim-gui-clie_946797.svg">10%</a></td><td><a href="gui/threads/jetty_thread_rx-1_946811.svg">rx-1 2.9%</a></td><td><a href="gui/threads/jetty_threads.tsv">tsv</a></td></tr>
+    <tr><td>moving_robots_and_sensors</td><td><a href="gui/threads/moving_robots_and_sensors_thread_gz::gui::plugin_947309.svg">27%</a></td><td><a href="gui/threads/moving_robots_and_sensors_thread_gz-sim-gui-clie_947218.svg">34%</a></td><td><a href="gui/threads/moving_robots_and_sensors_thread_rx-0_947231.svg">rx-0 12.2%</a></td><td><a href="gui/threads/moving_robots_and_sensors_threads.tsv">tsv</a></td></tr>
+  </table>
+
+  <h3>GUI Loading Flamegraphs (GUI launch, 20 s window)</h3>
+  <table>
+    <tr><th>World</th><th>Flamegraph</th></tr>
+    <tr><td>3k_shapes_static</td><td><a href="gui/loading/3k_shapes_static.svg">Open</a></td></tr>
+    <tr><td>jetty</td><td><a href="gui/loading/jetty.svg">Open</a></td></tr>
+    <tr><td>moving_robots_and_sensors</td><td><a href="gui/loading/moving_robots_and_sensors.svg">Open</a></td></tr>
+  </table>
+
+  <h3>Server State Stream Consumed by the GUI</h3>
+  <p class="note">5 s of <code>gz topic -e -t /world/&lt;name&gt;/state</code> with the world playing. The mixed world publishes on every
+  one time change (<code>JointVelocityCmd</code> written each step by DiffDrive / AckermannSteering).</p>
+  <table>
+    <tr><th>World</th><th>Messages</th><th>Entities / msg</th><th>Payload / msg</th><th>Sample</th></tr>
+    <tr><td>3k_shapes_static</td><td>47 Hz</td><td>13</td><td>0.2 KB</td><td><a href="gui/state/3k_shapes_static_state_sample.txt">sample</a></td></tr>
+    <tr><td>3k_shapes (dynamic)</td><td>11 Hz</td><td>504</td><td>28 KB</td><td><a href="gui/state/3k_shapes_state_sample.txt">sample</a></td></tr>
+    <tr><td>moving_robots_and_sensors</td><td><strong>2,443 Hz</strong></td><td>24</td><td>0.9 KB</td><td><a href="gui/state/moving_robots_and_sensors_state_sample.txt">sample</a></td></tr>
+  </table>
+
+  <h3>GUI Cache Counters (perf stat, 10 s)</h3>
+  <table>
+    <tr><th>World</th><th>IPC</th><th>L1d miss</th><th>LLC load miss</th><th>Raw</th></tr>
+    <tr><td>3k_shapes_static</td><td>0.69</td><td>2.36%</td><td>69.7%</td><td><a href="gui/cache/3k_shapes_static.txt">txt</a></td></tr>
+    <tr><td>3k_shapes</td><td>0.91</td><td>2.19%</td><td>43.0%</td><td><a href="gui/cache/3k_shapes.txt">txt</a></td></tr>
+    <tr><td>moving_robots_and_sensors</td><td>1.88</td><td>1.04%</td><td>1.7%</td><td><a href="gui/cache/moving_robots_and_sensors.txt">txt</a></td></tr>
   </table>
 
   <h2>Unified Summary (gz_summary.sh)</h2>

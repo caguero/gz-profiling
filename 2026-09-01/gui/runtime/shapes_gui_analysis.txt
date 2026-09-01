@@ -1,0 +1,55 @@
+================================================================
+  GUI analysis: shapes   (total weight: 4400200483)
+================================================================
+
+-- 1. CPU by subsystem (leaf-frame classification) --
+    19.0%  Ogre: scene-graph transforms
+    17.8%  Ogre: culling/frustum
+    13.2%  GPU driver (Mesa/Intel)
+    11.4%  other
+     8.4%  Ogre: forward+ lighting
+     7.3%  [unknown]
+     6.3%  Ogre: other render
+     5.1%  kernel/sync/idle
+     4.2%  Qt Quick scene-graph
+     3.9%  Qt (core/gui)
+     2.1%  C++ alloc/refcount/memops
+     0.7%  gz-rendering: scene store/PreRender
+     0.2%  gz-transport
+     0.2%  gz-gui: render loop
+     0.1%  gz-sim: RenderUtil/SceneManager
+     0.1%  gz-sim: ECM state sync
+
+-- 2. Top 15 self-time leaves --
+   15.16%  Ogre::Node::updateFromParentImpl
+   12.54%  [libnvidia-glcore.so.580.159.03]
+    8.18%  Ogre::ForwardClustered::collectLightForSlice
+    7.34%  [unknown]
+    5.70%  Ogre::Camera::isViewOutOfDate
+    5.31%  Ogre::Frustum::updateFrustumPlanesImpl
+    2.33%  Ogre::Frustum::updateWorldSpaceCornersImpl
+    2.01%  ___pthread_mutex_lock
+    1.94%  Ogre::Matrix4::inverseAffine
+    1.82%  [libQt6Gui.so.6.4.2]
+    1.66%  Ogre::RenderSystem::_makeRsProjectionMatrix
+    1.48%  [libOgreNextMain.so.2.3.1]
+    1.37%  ___pthread_mutex_unlock
+    1.16%  Ogre::Frustum::updateFrustumImpl
+    0.91%  [libQt6Quick.so.6.4.2]
+
+-- 3. Gazebo-owned functions by inclusive time (optimizable) --
+   64.94%  gz::gui::plugins::RenderThread::RenderNext
+   62.66%  gz::gui::plugins::RenderThreadRhiOpenGL::RenderNext
+   61.91%  gz::gui::plugins::GzRenderer::Render
+   60.61%  gz::rendering::v11::BaseCamera::Update
+   58.51%  gz::rendering::v11::Ogre2RenderTarget::Render
+    4.42%  gz::sim::v11::GuiRunner::UpdatePlugins
+    3.28%  gz::sim::v11::GuiRunner::OnStateQt
+    1.53%  gz::rendering::v11::Ogre2Scene::PreRender
+    0.87%  gz::rendering::v11::BaseScene::PreRender
+    0.84%  gz::rendering::v11::BaseVisual::PreRender
+    0.82%  gz::rendering::v11::BaseVisual::PreRenderChildren
+    0.82%  gz::rendering::v11::BaseNode::PreRender
+    0.66%  gz::sim::v11::GzSceneManager::Update
+    0.57%  gz::sim::v11::RenderUtil::Update
+    0.57%  gz::sim::v11::GzSceneManager::eventFilter

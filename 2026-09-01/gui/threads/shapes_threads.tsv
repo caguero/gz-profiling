@@ -1,0 +1,14 @@
+# Per-thread analysis: shapes
+# Source: captures_gui/runtime/perf_shapes.data
+# Total samples: 4400200483
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz::gui::plugin/945581	2887662911	65.6	Ogre::Node::updateFromParentImpl	23.1
+QSGRenderThread/945576	873620839	19.8	[libnvidia-glcore.so.580.159.03]	32.4
+gz-sim-gui-clie/945497	428284843	9.7	[unknown]	9.8
+QXcbEventQueue/945524	58174522	1.3	[unknown]	84.5
+rx-1/945512	56168504	1.2	[unknown]	37.5
+rx-0/945510	47141423	1.0	[unknown]	51.1
+gz-sim-gui-clie/945580	23069207	.5	[unknown]	52.2
+net-0/945502	16048144	.3	[unknown]	43.8
+gz-sim-gui-clie/945519	8024072	.1	[unknown]	25.0
+QSGRenderThread/945578	2006018	0	[unknown]	50.0

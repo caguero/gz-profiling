@@ -402,6 +402,10 @@ FLAMEGRAPH_DIR=~/FlameGraph OUTPUT_DIR=captures_gui/threads \
 
 Notes:
 
+- `gz_gui_flamegraph.sh` honours the same `<world>.topics` and `<world>.setup.sh`
+  companions as `gz_flamegraph.sh` in runtime mode (subscribers started and the
+  setup script run once the GUI is up), and takes the install prefix from
+  `GZ_INSTALL`.
 - All capture scripts (server and GUI) use `perf record -e task-clock` (not the
   default `cycles`) so hybrid P/E cores are sampled uniformly; the weights in the
   `.folded` files are therefore nanoseconds of CPU time, not sample counts.

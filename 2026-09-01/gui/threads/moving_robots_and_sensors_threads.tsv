@@ -1,0 +1,14 @@
+# Per-thread analysis: moving_robots_and_sensors
+# Source: captures_gui/runtime/perf_moving_robots_and_sensors.data
+# Total samples: 13244733845
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz-sim-gui-clie/947218	4542627761	34.2	_int_free	4.9
+gz::gui::plugin/947309	3598796292	27.1	Ogre::Node::updateFromParentImpl	20.5
+rx-0/947231	1623871571	12.2	_int_malloc	22.2
+QSGRenderThread/947304	1592778292	12.0	[libnvidia-glcore.so.580.159.03]	29.7
+rx-9/947616	1509528545	11.3	_int_malloc	23.9
+net-0/947223	294884646	2.2	[unknown]	60.5
+QXcbEventQueue/947246	56168504	.4	[unknown]	71.4
+gz-sim-gui-clie/947308	15045135	.1	[unknown]	66.7
+gz-sim-gui-clie/947241	10030090	0	__futex_abstimed_wait_common64	30.0
+gz::gui::plugin/947318	1003009	0	[libnvidia-glcore.so.580.159.03]	100.0

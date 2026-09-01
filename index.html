@@ -25,8 +25,8 @@
     <tr><th>Date</th><th>Description</th><th>Report</th></tr>
     <tr>
       <td class="date"><a href="2026-09-01/">2026-09-01</a></td>
-      <td>Gazebo <strong>server</strong> profiling on <strong>PR #3447</strong> (EnTT ECM) with <strong>gz-transport Zenoh 1.8 + shared memory</strong> (PRs #868, #842). 7 worlds including the new <code>moving_robots_and_sensors</code> benchmark (PR #3846). Loading is 10x faster than April; the framework has left the profiles and what remains is DART, the ODE broadphase, and two gz-physics interface costs (<code>WorldPoses</code> written every step, <code>EntityPtr</code> refcount churn).</td>
-      <td><a href="2026-09-01/findings_report.pdf">PDF</a></td>
+      <td>Gazebo <strong>server</strong> profiling on <strong>PR #3447</strong> (EnTT ECM) with <strong>gz-transport Zenoh 1.8 + shared memory</strong> (PRs #868, #842). 7 worlds including the new <code>moving_robots_and_sensors</code> benchmark (PR #3846). Loading is 10x faster than April; the framework has left the profiles and what remains is DART, the ODE broadphase, and two gz-physics interface costs (<code>WorldPoses</code> written every step, <code>EntityPtr</code> refcount churn). <strong>GUI</strong> run on the same stack: the 3k GUI is half pose re-application (<code>RenderUtil::Update</code>) and half scene graph walk; the mixed world floods the GUI with a 2.4 kHz state stream.</td>
+      <td><a href="2026-09-01/findings_report.pdf">Server PDF</a><br><a href="2026-09-01/findings_report_gui.pdf">GUI PDF</a></td>
     </tr>
     <tr>
       <td class="date"><a href="2026-07-03/">2026-07-03</a></td>

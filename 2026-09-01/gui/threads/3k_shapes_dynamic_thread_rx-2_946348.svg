@@ -1,0 +1,1455 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="862" onload="init(evt)" viewBox="0 0 1200 862" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="862.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >3k_shapes_dynamic thread: rx-2-?/946348 (.1%)</text>
+<text id="subtitle" x="600.00" y="48" >27081243 samples</text>
+<text id="details" x="10.00" y="845" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="845" > </text>
+<g id="frames">
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="665.6" y="637" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="668.56" y="647.5" >[unk..</text>
+</g>
+<g >
+<title>&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push (15,045,135 samples, 55.56%)</title><rect x="10.0" y="717" width="655.6" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="13.00" y="727.5" >&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapFieldLite&lt;gz::msgs::SerializedEntityMap_ComponentsEntry_DoNotUse, long, gz::msgs::SerializedComponent,  (1,003,009 samples, 3.70%)</title><rect x="927.8" y="173" width="43.7" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="930.78" y="183.5" >goog..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::read_messages (1,003,009 samples, 3.70%)</title><rect x="971.5" y="653" width="43.7" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="974.48" y="663.5" >zeno..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStepMap::~SerializedStepMap (1,003,009 samples, 3.70%)</title><rect x="927.8" y="509" width="43.7" height="15.0" fill="rgb(239,160,38)" rx="2" ry="2" />
+<text  x="930.78" y="519.5" >gz::..</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;unsigned long, gz::msgs::SerializedEntityMap&gt; &gt;, bool&gt; google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::try_emplace&lt;unsigned long const&amp;&gt; (2,006,018 samples, 7.41%)</title><rect x="1015.2" y="429" width="87.4" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="1018.19" y="439.5" >std::pair&lt;..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="796.7" y="477" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="799.67" y="487.5" >[unk..</text>
+</g>
+<g >
+<title>start_thread (1,003,009 samples, 3.70%)</title><rect x="971.5" y="797" width="43.7" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="974.48" y="807.5" >star..</text>
+</g>
+<g >
+<title>__GI___libc_malloc (1,003,009 samples, 3.70%)</title><rect x="1058.9" y="317" width="43.7" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="1061.89" y="327.5" >__GI..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::EnsureZenohSubscription (15,045,135 samples, 55.56%)</title><rect x="10.0" y="653" width="655.6" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="13.00" y="663.5" >gz::transport::v16::NodeShared::EnsureZenohSubscription</text>
+</g>
+<g >
+<title>zenoh::Sample::get_attachment (1,003,009 samples, 3.70%)</title><rect x="971.5" y="541" width="43.7" height="15.0" fill="rgb(223,85,20)" rx="2" ry="2" />
+<text  x="974.48" y="551.5" >zeno..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStepMap::_InternalParse (14,042,126 samples, 51.85%)</title><rect x="10.0" y="509" width="611.9" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="13.00" y="519.5" >gz::msgs::SerializedStepMap::_InternalParse</text>
+</g>
+<g >
+<title>z_loan (1,003,009 samples, 3.70%)</title><rect x="971.5" y="509" width="43.7" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="974.48" y="519.5" >z_loan</text>
+</g>
+<g >
+<title>gz::msgs::SerializedComponent::_InternalParse (1,003,009 samples, 3.70%)</title><rect x="10.0" y="253" width="43.7" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="13.00" y="263.5" >gz::..</text>
+</g>
+<g >
+<title>clone3 (5,015,045 samples, 18.52%)</title><rect x="665.6" y="797" width="218.5" height="15.0" fill="rgb(216,54,12)" rx="2" ry="2" />
+<text  x="668.56" y="807.5" >clone3</text>
+</g>
+<g >
+<title>gz::msgs::SerializedEntityMap&amp; google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::operator[]&lt;unsigned long&gt; (2,006,018 samples, 7.41%)</title><rect x="1015.2" y="461" width="87.4" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="1018.19" y="471.5" >gz::msgs::..</text>
+</g>
+<g >
+<title>&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll (2,006,018 samples, 7.41%)</title><rect x="884.1" y="701" width="87.4" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="887.07" y="711.5" >&lt;tokio_uti..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::~Map (1,003,009 samples, 3.70%)</title><rect x="927.8" y="365" width="43.7" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="930.78" y="375.5" >goog..</text>
+</g>
+<g >
+<title>zenoh::net::routing::dispatcher::pubsub::route_data (1,003,009 samples, 3.70%)</title><rect x="840.4" y="589" width="43.7" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="843.37" y="599.5" >zeno..</text>
+</g>
+<g >
+<title>google::protobuf::MapPair&lt;long, gz::msgs::SerializedComponent&gt;&amp; google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::operator[]&lt;long const&amp;&gt; (2,006,018 samples, 7.41%)</title><rect x="53.7" y="269" width="87.4" height="15.0" fill="rgb(208,16,4)" rx="2" ry="2" />
+<text  x="56.70" y="279.5" >google::pr..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::~Map (1,003,009 samples, 3.70%)</title><rect x="927.8" y="157" width="43.7" height="15.0" fill="rgb(213,38,9)" rx="2" ry="2" />
+<text  x="930.78" y="167.5" >goog..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStateMap::SharedDtor (1,003,009 samples, 3.70%)</title><rect x="927.8" y="413" width="43.7" height="15.0" fill="rgb(241,167,39)" rx="2" ry="2" />
+<text  x="930.78" y="423.5" >gz::..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapField&lt;gz::msgs::SerializedEntityMap_ComponentsEntry_DoNotUse, long, gz::msgs::SerializedComponent,  (2,006,018 samples, 7.41%)</title><rect x="1102.6" y="429" width="87.4" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="1105.59" y="439.5" >google::pr..</text>
+</g>
+<g >
+<title>syscall (1,003,009 samples, 3.70%)</title><rect x="665.6" y="653" width="43.7" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="668.56" y="663.5" >sysc..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedEntityMap&amp; google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::operator[]&lt;unsigned long&gt; (11,033,099 samples, 40.74%)</title><rect x="141.1" y="397" width="480.8" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="144.11" y="407.5" >gz::msgs::SerializedEntityMap&amp; google::protobuf::Map&lt;unsigned lon..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedEntityMap::operator= (2,006,018 samples, 7.41%)</title><rect x="1102.6" y="461" width="87.4" height="15.0" fill="rgb(248,202,48)" rx="2" ry="2" />
+<text  x="1105.59" y="471.5" >gz::msgs::..</text>
+</g>
+<g >
+<title>char const* google::protobuf::internal::ParseContext::ParseMessage&lt;google::protobuf::internal::MapField&lt;gz::msgs::SerializedEntityMap_ComponentsEntry_DoNotUse, long, gz::msgs::SerializedComponent,  (3,009,027 samples, 11.11%)</title><rect x="10.0" y="349" width="131.1" height="15.0" fill="rgb(221,74,17)" rx="2" ry="2" />
+<text  x="13.00" y="359.5" >char const* goog..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapFieldLite&lt;gz::msgs::SerializedStateMap_EntitiesEntry_DoNotUse, unsigned long, gz::msgs::SerializedEntityMap,  (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="477" width="174.8" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="1018.19" y="487.5" >google::protobuf::inte..</text>
+</g>
+<g >
+<title>QMetaObject::invokeMethod (1,003,009 samples, 3.70%)</title><rect x="621.9" y="573" width="43.7" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="624.85" y="583.5" >QMet..</text>
+</g>
+<g >
+<title>google::protobuf::MapPair&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;&amp; google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::operator[]&lt;unsigned long const&amp;&gt; (11,033,099 samples, 40.74%)</title><rect x="141.1" y="381" width="480.8" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="144.11" y="391.5" >google::protobuf::MapPair&lt;unsigned long, gz::msgs::SerializedEnti..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapAllocator&lt;void*&gt;::allocate (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="237" width="43.7" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="1105.59" y="247.5" >goog..</text>
+</g>
+<g >
+<title>std::_Function_handler&lt;std::shared_ptr&lt;google::protobuf::Message&gt;  (14,042,126 samples, 51.85%)</title><rect x="10.0" y="589" width="611.9" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="13.00" y="599.5" >std::_Function_handler&lt;std::shared_ptr&lt;google::protobuf::Message&gt; </text>
+</g>
+<g >
+<title>mio::sys::unix::waker::Waker::wake (1,003,009 samples, 3.70%)</title><rect x="796.7" y="653" width="43.7" height="15.0" fill="rgb(246,192,46)" rx="2" ry="2" />
+<text  x="799.67" y="663.5" >mio:..</text>
+</g>
+<g >
+<title>bool google::protobuf::internal::MergeFromImpl&lt;false&gt; (14,042,126 samples, 51.85%)</title><rect x="10.0" y="525" width="611.9" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="13.00" y="535.5" >bool google::protobuf::internal::MergeFromImpl&lt;false&gt;</text>
+</g>
+<g >
+<title>gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::SubscriptionHandler (14,042,126 samples, 51.85%)</title><rect x="10.0" y="541" width="611.9" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="13.00" y="551.5" >gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::SubscriptionHa..</text>
+</g>
+<g >
+<title>operator new (1,003,009 samples, 3.70%)</title><rect x="1058.9" y="333" width="43.7" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1061.89" y="343.5" >oper..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 7.41%)</title><rect x="709.3" y="589" width="87.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="712.26" y="599.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 7.41%)</title><rect x="709.3" y="557" width="87.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="712.26" y="567.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::run_task (2,006,018 samples, 7.41%)</title><rect x="884.1" y="733" width="87.4" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="887.07" y="743.5" >tokio::run..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStepMap::~SerializedStepMap (1,003,009 samples, 3.70%)</title><rect x="927.8" y="493" width="43.7" height="15.0" fill="rgb(239,160,38)" rx="2" ry="2" />
+<text  x="930.78" y="503.5" >gz::..</text>
+</g>
+<g >
+<title>operator new (2,006,018 samples, 7.41%)</title><rect x="53.7" y="93" width="87.4" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="56.70" y="103.5" >operator new</text>
+</g>
+<g >
+<title>gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::RunLocalCallback (1,003,009 samples, 3.70%)</title><rect x="621.9" y="621" width="43.7" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="624.85" y="631.5" >gz::..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapField&lt;gz::msgs::SerializedEntityMap_ComponentsEntry_DoNotUse, long, gz::msgs::SerializedComponent,  (1,003,009 samples, 3.70%)</title><rect x="927.8" y="189" width="43.7" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="930.78" y="199.5" >goog..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 7.41%)</title><rect x="709.3" y="573" width="87.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="712.26" y="583.5" >[unknown]</text>
+</g>
+<g >
+<title>gz::msgs::SerializedComponent&amp; google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::operator[]&lt;long&gt; (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="397" width="43.7" height="15.0" fill="rgb(228,110,26)" rx="2" ry="2" />
+<text  x="1105.59" y="407.5" >gz::..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::park::Inner::park_condvar (1,003,009 samples, 3.70%)</title><rect x="665.6" y="669" width="43.7" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="668.56" y="679.5" >toki..</text>
+</g>
+<g >
+<title>epoll_wait (2,006,018 samples, 7.41%)</title><rect x="709.3" y="637" width="87.4" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="712.26" y="647.5" >epoll_wait</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapFieldLite&lt;gz::msgs::SerializedEntityMap_ComponentsEntry_DoNotUse, long, gz::msgs::SerializedComponent,  (2,006,018 samples, 7.41%)</title><rect x="1102.6" y="413" width="87.4" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="1105.59" y="423.5" >google::pr..</text>
+</g>
+<g >
+<title>std::shared_ptr&lt;google::protobuf::Message&gt; std::__invoke_impl&lt;std::shared_ptr&lt;google::protobuf::Message&gt;, gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::SubscriptionHandler (14,042,126 samples, 51.85%)</title><rect x="10.0" y="557" width="611.9" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="13.00" y="567.5" >std::shared_ptr&lt;google::protobuf::Message&gt; std::__invoke_impl&lt;std::shared_ptr&lt;google..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::park_internal (3,009,027 samples, 11.11%)</title><rect x="665.6" y="685" width="131.1" height="15.0" fill="rgb(208,15,3)" rx="2" ry="2" />
+<text  x="668.56" y="695.5" >tokio::runtime::..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="753.0" y="509" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="755.96" y="519.5" >[unk..</text>
+</g>
+<g >
+<title>&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push (1,003,009 samples, 3.70%)</title><rect x="840.4" y="573" width="43.7" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="843.37" y="583.5" >&lt;zen..</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;long, gz::msgs::SerializedComponent&gt; &gt;, bool&gt; google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::ArenaAwareTryEmplace&lt;long const&amp;&gt; (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="349" width="43.7" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="1105.59" y="359.5" >std:..</text>
+</g>
+<g >
+<title>_int_malloc (2,006,018 samples, 7.41%)</title><rect x="53.7" y="61" width="87.4" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="56.70" y="71.5" >_int_malloc</text>
+</g>
+<g >
+<title>&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::handle_message (2,006,018 samples, 7.41%)</title><rect x="884.1" y="653" width="87.4" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="887.07" y="663.5" >&lt;zenoh::ne..</text>
+</g>
+<g >
+<title>google::protobuf::internal::ParseContext::ParseMessage (1,003,009 samples, 3.70%)</title><rect x="10.0" y="269" width="43.7" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="13.00" y="279.5" >goog..</text>
+</g>
+<g >
+<title>gz::transport::v16::ISubscriptionHandler::CreateMsgFromBuffer (14,042,126 samples, 51.85%)</title><rect x="10.0" y="621" width="611.9" height="15.0" fill="rgb(231,120,28)" rx="2" ry="2" />
+<text  x="13.00" y="631.5" >gz::transport::v16::ISubscriptionHandler::CreateMsgFromBuffer</text>
+</g>
+<g >
+<title>gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::RunLocalCallback (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="637" width="174.8" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="1018.19" y="647.5" >gz::transport::v16::Su..</text>
+</g>
+<g >
+<title>std::enable_if&lt;is_invocable_r_v&lt;std::shared_ptr&lt;google::protobuf::Message&gt;, gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::SubscriptionHandler (14,042,126 samples, 51.85%)</title><rect x="10.0" y="573" width="611.9" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="13.00" y="583.5" >std::enable_if&lt;is_invocable_r_v&lt;std::shared_ptr&lt;google::protobuf::Message&gt;, gz::tran..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapAllocator&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::Node&gt;::allocate (1,003,009 samples, 3.70%)</title><rect x="1058.9" y="349" width="43.7" height="15.0" fill="rgb(254,225,53)" rx="2" ry="2" />
+<text  x="1061.89" y="359.5" >goog..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedComponent::MergeImpl (1,003,009 samples, 3.70%)</title><rect x="1146.3" y="381" width="43.7" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="1149.30" y="391.5" >gz::..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapField&lt;gz::msgs::SerializedStateMap_EntitiesEntry_DoNotUse, unsigned long, gz::msgs::SerializedEntityMap,  (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="493" width="174.8" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="1018.19" y="503.5" >google::protobuf::inte..</text>
+</g>
+<g >
+<title>google::protobuf::MapPair&lt;long, gz::msgs::SerializedComponent&gt;&amp; google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::operator[]&lt;long const&amp;&gt; (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="381" width="43.7" height="15.0" fill="rgb(208,16,4)" rx="2" ry="2" />
+<text  x="1105.59" y="391.5" >goog..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedComponent::_internal_set_component (1,003,009 samples, 3.70%)</title><rect x="1146.3" y="365" width="43.7" height="15.0" fill="rgb(224,91,21)" rx="2" ry="2" />
+<text  x="1149.30" y="375.5" >gz::..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::TriggerCallbacks (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="653" width="174.8" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="1018.19" y="663.5" >gz::transport::v16::No..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::ResizeIfLoadIsOutOfRange (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="317" width="43.7" height="15.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="1105.59" y="327.5" >goog..</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;unsigned long, gz::msgs::SerializedEntityMap&gt; &gt;, bool&gt; google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::TryEmplaceInternal&lt;unsigned long const&amp;&gt; (2,006,018 samples, 7.41%)</title><rect x="1015.2" y="397" width="87.4" height="15.0" fill="rgb(213,38,9)" rx="2" ry="2" />
+<text  x="1018.19" y="407.5" >std::pair&lt;..</text>
+</g>
+<g >
+<title>operator new (1,003,009 samples, 3.70%)</title><rect x="1146.3" y="333" width="43.7" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1149.30" y="343.5" >oper..</text>
+</g>
+<g >
+<title>zenoh::net::routing::dispatcher::pubsub::route_data (15,045,135 samples, 55.56%)</title><rect x="10.0" y="733" width="655.6" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="13.00" y="743.5" >zenoh::net::routing::dispatcher::pubsub::route_data</text>
+</g>
+<g >
+<title>&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::handle_message (1,003,009 samples, 3.70%)</title><rect x="840.4" y="605" width="43.7" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="843.37" y="615.5" >&lt;zen..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStepMap::SerializedStepMap (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="525" width="174.8" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="1018.19" y="535.5" >gz::msgs::SerializedSt..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStateMap::_InternalParse (14,042,126 samples, 51.85%)</title><rect x="10.0" y="477" width="611.9" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="13.00" y="487.5" >gz::msgs::SerializedStateMap::_InternalParse</text>
+</g>
+<g >
+<title>gz::sim::v11::GuiRunner::OnState (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="605" width="174.8" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1018.19" y="615.5" >gz::sim::v11::GuiRunne..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::EnsureZenohSubscription (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="669" width="174.8" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="1018.19" y="679.5" >gz::transport::v16::No..</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;unsigned long, gz::msgs::SerializedEntityMap&gt; &gt;, bool&gt; google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::ArenaAwareTryEmplace&lt;unsigned long const&amp;&gt; (11,033,099 samples, 40.74%)</title><rect x="141.1" y="349" width="480.8" height="15.0" fill="rgb(218,62,14)" rx="2" ry="2" />
+<text  x="144.11" y="359.5" >std::pair&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::Serializ..</text>
+</g>
+<g >
+<title>void** google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::Alloc&lt;void*&gt; (2,006,018 samples, 7.41%)</title><rect x="53.7" y="141" width="87.4" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="56.70" y="151.5" >void** goo..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::InsertUnique (1,003,009 samples, 3.70%)</title><rect x="1015.2" y="381" width="43.7" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="1018.19" y="391.5" >goog..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStateMap::~SerializedStateMap (1,003,009 samples, 3.70%)</title><rect x="927.8" y="461" width="43.7" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="930.78" y="471.5" >gz::..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::CreateEmptyTable (2,006,018 samples, 7.41%)</title><rect x="53.7" y="157" width="87.4" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="56.70" y="167.5" >google::pr..</text>
+</g>
+<g >
+<title>google::protobuf::internal::TableEntryIsNonEmptyList (1,003,009 samples, 3.70%)</title><rect x="1015.2" y="349" width="43.7" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1018.19" y="359.5" >goog..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="796.7" y="461" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="799.67" y="471.5" >[unk..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 7.41%)</title><rect x="709.3" y="605" width="87.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="712.26" y="615.5" >[unknown]</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;long, gz::msgs::SerializedComponent&gt; &gt;, bool&gt; google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::ArenaAwareTryEmplace&lt;long const&amp;&gt; (2,006,018 samples, 7.41%)</title><rect x="53.7" y="237" width="87.4" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="56.70" y="247.5" >std::pair&lt;..</text>
+</g>
+<g >
+<title>std::sys::backtrace::__rust_begin_short_backtrace (2,006,018 samples, 7.41%)</title><rect x="884.1" y="781" width="87.4" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="887.07" y="791.5" >std::sys::..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::park::Unparker::unpark (1,003,009 samples, 3.70%)</title><rect x="796.7" y="669" width="43.7" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="799.67" y="679.5" >toki..</text>
+</g>
+<g >
+<title>withPayloadView&lt;gz::transport::v16::NodeShared::EnsureZenohSubscription (2,006,018 samples, 7.41%)</title><rect x="884.1" y="573" width="87.4" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="887.07" y="583.5" >withPayloa..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::Resize (11,033,099 samples, 40.74%)</title><rect x="141.1" y="301" width="480.8" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="144.11" y="311.5" >google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMa..</text>
+</g>
+<g >
+<title>unsigned long const&amp; std::min&lt;unsigned long&gt; (1,003,009 samples, 3.70%)</title><rect x="578.1" y="253" width="43.8" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="581.15" y="263.5" >unsi..</text>
+</g>
+<g >
+<title>std::sys::thread::unix::Thread::new::thread_start (5,015,045 samples, 18.52%)</title><rect x="665.6" y="765" width="218.5" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="668.56" y="775.5" >std::sys::thread::unix::Thre..</text>
+</g>
+<g >
+<title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_mutate (1,003,009 samples, 3.70%)</title><rect x="10.0" y="205" width="43.7" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="13.00" y="215.5" >std:..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedComponent::operator= (1,003,009 samples, 3.70%)</title><rect x="1146.3" y="397" width="43.7" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="1149.30" y="407.5" >gz::..</text>
+</g>
+<g >
+<title>core::ops::function::FnOnce::call_once{{vtable.shim}} (2,006,018 samples, 7.41%)</title><rect x="884.1" y="797" width="87.4" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="887.07" y="807.5" >core::ops:..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="665.6" y="621" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="668.56" y="631.5" >[unk..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::TableEntryIsNonEmptyList (1,003,009 samples, 3.70%)</title><rect x="1015.2" y="365" width="43.7" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="1018.19" y="375.5" >goog..</text>
+</g>
+<g >
+<title>zenoh::net::routing::dispatcher::pubsub::route_data (2,006,018 samples, 7.41%)</title><rect x="884.1" y="637" width="87.4" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="887.07" y="647.5" >zenoh::net..</text>
+</g>
+<g >
+<title>_int_malloc (10,030,090 samples, 37.04%)</title><rect x="141.1" y="189" width="437.0" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="144.11" y="199.5" >_int_malloc</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::CreateEmptyTable (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="269" width="43.7" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="1105.59" y="279.5" >goog..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapTypeHandler&lt; (3,009,027 samples, 11.11%)</title><rect x="10.0" y="397" width="131.1" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="13.00" y="407.5" >google::protobuf..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="753.0" y="525" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="755.96" y="535.5" >[unk..</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;long, gz::msgs::SerializedComponent&gt; &gt;, bool&gt; google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::try_emplace&lt;long const&amp;&gt; (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="365" width="43.7" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="1105.59" y="375.5" >std:..</text>
+</g>
+<g >
+<title>&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::handle_message (15,045,135 samples, 55.56%)</title><rect x="10.0" y="749" width="655.6" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="13.00" y="759.5" >&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::hand..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::TableEntryIsNonEmptyList (1,003,009 samples, 3.70%)</title><rect x="927.8" y="93" width="43.7" height="15.0" fill="rgb(208,15,3)" rx="2" ry="2" />
+<text  x="930.78" y="103.5" >goog..</text>
+</g>
+<g >
+<title>&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push (2,006,018 samples, 7.41%)</title><rect x="884.1" y="621" width="87.4" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="887.07" y="631.5" >&lt;zenoh::ap..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStepMap::SharedDtor (1,003,009 samples, 3.70%)</title><rect x="927.8" y="477" width="43.7" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="930.78" y="487.5" >gz::..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapAllocator&lt;void*&gt;::allocate (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="221" width="43.7" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="1105.59" y="231.5" >goog..</text>
+</g>
+<g >
+<title>zenoh::api::handlers::callback::CallbackImpl::call_with_message (2,006,018 samples, 7.41%)</title><rect x="884.1" y="605" width="87.4" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="887.07" y="615.5" >zenoh::api..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapAllocator&lt;void*&gt;::allocate (10,030,090 samples, 37.04%)</title><rect x="141.1" y="237" width="437.0" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="144.11" y="247.5" >google::protobuf::internal::MapAllocator&lt;void*&gt;::allocate</text>
+</g>
+<g >
+<title>std::function&lt;void  (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="621" width="174.8" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="1018.19" y="631.5" >std::function&lt;void </text>
+</g>
+<g >
+<title>__GI___libc_write (1,003,009 samples, 3.70%)</title><rect x="796.7" y="637" width="43.7" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="799.67" y="647.5" >__GI..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedComponent&amp; google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::operator[]&lt;long&gt; (2,006,018 samples, 7.41%)</title><rect x="53.7" y="285" width="87.4" height="15.0" fill="rgb(228,110,26)" rx="2" ry="2" />
+<text  x="56.70" y="295.5" >gz::msgs::..</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (1,003,009 samples, 3.70%)</title><rect x="971.5" y="733" width="43.7" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="974.48" y="743.5" >toki..</text>
+</g>
+<g >
+<title>gz::sim::v11::GuiRunner::OnState (1,003,009 samples, 3.70%)</title><rect x="621.9" y="589" width="43.7" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="624.85" y="599.5" >gz::..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::read_messages (2,006,018 samples, 7.41%)</title><rect x="884.1" y="685" width="87.4" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="887.07" y="695.5" >zenoh_tran..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::read_messages (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="797" width="174.8" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1018.19" y="807.5" >zenoh_transport::unica..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::trigger_callback (1,003,009 samples, 3.70%)</title><rect x="840.4" y="621" width="43.7" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="843.37" y="631.5" >zeno..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::trigger_callback (15,045,135 samples, 55.56%)</title><rect x="10.0" y="765" width="655.6" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="13.00" y="775.5" >zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transp..</text>
+</g>
+<g >
+<title>&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::handle_message (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="765" width="174.8" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="1018.19" y="775.5" >&lt;zenoh::net::primitive..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::TriggerCallbacks (1,003,009 samples, 3.70%)</title><rect x="884.1" y="541" width="43.7" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="887.07" y="551.5" >gz::..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapAllocator&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::Node&gt;::allocate (1,003,009 samples, 3.70%)</title><rect x="1058.9" y="365" width="43.7" height="15.0" fill="rgb(254,225,53)" rx="2" ry="2" />
+<text  x="1061.89" y="375.5" >goog..</text>
+</g>
+<g >
+<title>&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll (1,003,009 samples, 3.70%)</title><rect x="840.4" y="653" width="43.7" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="843.37" y="663.5" >&lt;tok..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::run_task (1,003,009 samples, 3.70%)</title><rect x="971.5" y="701" width="43.7" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="974.48" y="711.5" >toki..</text>
+</g>
+<g >
+<title>google::protobuf::internal::TableEntryIsNonEmptyList (1,003,009 samples, 3.70%)</title><rect x="927.8" y="77" width="43.7" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="930.78" y="87.5" >goog..</text>
+</g>
+<g >
+<title>all (27,081,243 samples, 100%)</title><rect x="10.0" y="813" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="823.5" ></text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::trigger_callback (2,006,018 samples, 7.41%)</title><rect x="884.1" y="669" width="87.4" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="887.07" y="679.5" >zenoh_tran..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="796.7" y="541" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="799.67" y="551.5" >[unk..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedEntityMap::SharedDtor (1,003,009 samples, 3.70%)</title><rect x="927.8" y="205" width="43.7" height="15.0" fill="rgb(240,162,38)" rx="2" ry="2" />
+<text  x="930.78" y="215.5" >gz::..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::~InnerMap (1,003,009 samples, 3.70%)</title><rect x="927.8" y="141" width="43.7" height="15.0" fill="rgb(253,221,52)" rx="2" ry="2" />
+<text  x="930.78" y="151.5" >goog..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::ResizeIfLoadIsOutOfRange (11,033,099 samples, 40.74%)</title><rect x="141.1" y="317" width="480.8" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="144.11" y="327.5" >google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMa..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::Resize (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="285" width="43.7" height="15.0" fill="rgb(252,217,52)" rx="2" ry="2" />
+<text  x="1105.59" y="295.5" >goog..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::run (1,003,009 samples, 3.70%)</title><rect x="971.5" y="717" width="43.7" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="974.48" y="727.5" >toki..</text>
+</g>
+<g >
+<title>zenoh::net::routing::dispatcher::pubsub::route_data (1,003,009 samples, 3.70%)</title><rect x="971.5" y="605" width="43.7" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="974.48" y="615.5" >zeno..</text>
+</g>
+<g >
+<title>QMetaMethod::invoke (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="557" width="174.8" height="15.0" fill="rgb(219,65,15)" rx="2" ry="2" />
+<text  x="1018.19" y="567.5" >QMetaMethod::invoke</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::EnsureZenohSubscription (1,003,009 samples, 3.70%)</title><rect x="971.5" y="557" width="43.7" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="974.48" y="567.5" >gz::..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedEntityMap::MergeImpl (2,006,018 samples, 7.41%)</title><rect x="1102.6" y="445" width="87.4" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="1105.59" y="455.5" >gz::msgs::..</text>
+</g>
+<g >
+<title>std::sys::backtrace::__rust_begin_short_backtrace (1,003,009 samples, 3.70%)</title><rect x="971.5" y="749" width="43.7" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="974.48" y="759.5" >std:..</text>
+</g>
+<g >
+<title>void** google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::Alloc&lt;void*&gt; (10,030,090 samples, 37.04%)</title><rect x="141.1" y="269" width="437.0" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="144.11" y="279.5" >void** google::protobuf::Map&lt;unsigned long, gz::msgs::Seria..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapField&lt;gz::msgs::SerializedStateMap_EntitiesEntry_DoNotUse, unsigned long, gz::msgs::SerializedEntityMap,  (14,042,126 samples, 51.85%)</title><rect x="10.0" y="445" width="611.9" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="13.00" y="455.5" >google::protobuf::internal::MapField&lt;gz::msgs::SerializedStateMap_EntitiesEntry_DoNo..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::~InnerMap (1,003,009 samples, 3.70%)</title><rect x="927.8" y="349" width="43.7" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="930.78" y="359.5" >goog..</text>
+</g>
+<g >
+<title>std::_Sp_counted_base&lt; (1,003,009 samples, 3.70%)</title><rect x="927.8" y="525" width="43.7" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="930.78" y="535.5" >std:..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapAllocator&lt;void*&gt;::allocate (2,006,018 samples, 7.41%)</title><rect x="53.7" y="109" width="87.4" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="56.70" y="119.5" >google::pr..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::clear (1,003,009 samples, 3.70%)</title><rect x="927.8" y="109" width="43.7" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="930.78" y="119.5" >goog..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::Resize (2,006,018 samples, 7.41%)</title><rect x="53.7" y="189" width="87.4" height="15.0" fill="rgb(252,217,52)" rx="2" ry="2" />
+<text  x="56.70" y="199.5" >google::pr..</text>
+</g>
+<g >
+<title>std::function&lt;void  (1,003,009 samples, 3.70%)</title><rect x="621.9" y="605" width="43.7" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="624.85" y="615.5" >std:..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::clear (1,003,009 samples, 3.70%)</title><rect x="927.8" y="317" width="43.7" height="15.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="930.78" y="327.5" >goog..</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (1,003,009 samples, 3.70%)</title><rect x="840.4" y="669" width="43.7" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="843.37" y="679.5" >toki..</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;long, gz::msgs::SerializedComponent&gt; &gt;, bool&gt; google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::TryEmplaceInternal&lt;long const&amp;&gt; (2,006,018 samples, 7.41%)</title><rect x="53.7" y="221" width="87.4" height="15.0" fill="rgb(223,82,19)" rx="2" ry="2" />
+<text  x="56.70" y="231.5" >std::pair&lt;..</text>
+</g>
+<g >
+<title>__GI___libc_malloc (1,003,009 samples, 3.70%)</title><rect x="1146.3" y="317" width="43.7" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="1149.30" y="327.5" >__GI..</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (1,003,009 samples, 3.70%)</title><rect x="971.5" y="685" width="43.7" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="974.48" y="695.5" >toki..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="796.7" y="605" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="799.67" y="615.5" >[unk..</text>
+</g>
+<g >
+<title>_int_malloc (1,003,009 samples, 3.70%)</title><rect x="1058.9" y="301" width="43.7" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="1061.89" y="311.5" >_int..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStateMap::SerializedStateMap (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="509" width="174.8" height="15.0" fill="rgb(248,202,48)" rx="2" ry="2" />
+<text  x="1018.19" y="519.5" >gz::msgs::SerializedSt..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::run_task (2,006,018 samples, 7.41%)</title><rect x="796.7" y="685" width="87.4" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="799.67" y="695.5" >tokio::run..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapFieldLite&lt;gz::msgs::SerializedStateMap_EntitiesEntry_DoNotUse, unsigned long, gz::msgs::SerializedEntityMap,  (1,003,009 samples, 3.70%)</title><rect x="927.8" y="381" width="43.7" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="930.78" y="391.5" >goog..</text>
+</g>
+<g >
+<title>core::ops::function::FnOnce::call_once{{vtable.shim}} (1,003,009 samples, 3.70%)</title><rect x="971.5" y="765" width="43.7" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="974.48" y="775.5" >core..</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (2,006,018 samples, 7.41%)</title><rect x="884.1" y="765" width="87.4" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="887.07" y="775.5" >tokio::run..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapFieldLite&lt;gz::msgs::SerializedStateMap_EntitiesEntry_DoNotUse, unsigned long, gz::msgs::SerializedEntityMap,  (14,042,126 samples, 51.85%)</title><rect x="10.0" y="429" width="611.9" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="13.00" y="439.5" >google::protobuf::internal::MapFieldLite&lt;gz::msgs::SerializedStateMap_EntitiesEntry_..</text>
+</g>
+<g >
+<title>QMetaObject::invokeMethod (1,003,009 samples, 3.70%)</title><rect x="621.9" y="557" width="43.7" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="624.85" y="567.5" >QMet..</text>
+</g>
+<g >
+<title>start_thread (5,015,045 samples, 18.52%)</title><rect x="665.6" y="781" width="218.5" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="668.56" y="791.5" >start_thread</text>
+</g>
+<g >
+<title>std::function&lt;std::shared_ptr&lt;google::protobuf::Message&gt;  (14,042,126 samples, 51.85%)</title><rect x="10.0" y="605" width="611.9" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="13.00" y="615.5" >std::function&lt;std::shared_ptr&lt;google::protobuf::Message&gt; </text>
+</g>
+<g >
+<title>__GI___libc_malloc (2,006,018 samples, 7.41%)</title><rect x="53.7" y="77" width="87.4" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="56.70" y="87.5" >__GI___lib..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::Node* google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::Alloc&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::Node&gt; (1,003,009 samples, 3.70%)</title><rect x="1058.9" y="381" width="43.7" height="15.0" fill="rgb(244,179,43)" rx="2" ry="2" />
+<text  x="1061.89" y="391.5" >goog..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::TransferList (1,003,009 samples, 3.70%)</title><rect x="578.1" y="285" width="43.8" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="581.15" y="295.5" >goog..</text>
+</g>
+<g >
+<title>google::protobuf::internal::ParseContext::ParseMessage (3,009,027 samples, 11.11%)</title><rect x="10.0" y="381" width="131.1" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="13.00" y="391.5" >google::protobuf..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="796.7" y="525" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="799.67" y="535.5" >[unk..</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (2,006,018 samples, 7.41%)</title><rect x="884.1" y="717" width="87.4" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="887.07" y="727.5" >tokio::run..</text>
+</g>
+<g >
+<title>z_loaned_sample_t const* zenoh::interop::as_loaned_c_ptr&lt;z_owned_sample_t, z_loaned_sample_t, z_loaned_sample_t&gt; (1,003,009 samples, 3.70%)</title><rect x="971.5" y="525" width="43.7" height="15.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="974.48" y="535.5" >z_lo..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStateMap::~SerializedStateMap (1,003,009 samples, 3.70%)</title><rect x="927.8" y="429" width="43.7" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="930.78" y="439.5" >gz::..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedEntityMap::~SerializedEntityMap (1,003,009 samples, 3.70%)</title><rect x="927.8" y="237" width="43.7" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="930.78" y="247.5" >gz::..</text>
+</g>
+<g >
+<title>google::protobuf::internal::ParseContext::ParseMessage (14,042,126 samples, 51.85%)</title><rect x="10.0" y="493" width="611.9" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="13.00" y="503.5" >google::protobuf::internal::ParseContext::ParseMessage</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::ResizeIfLoadIsOutOfRange (2,006,018 samples, 7.41%)</title><rect x="53.7" y="205" width="87.4" height="15.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="56.70" y="215.5" >google::pr..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::read_messages (15,045,135 samples, 55.56%)</title><rect x="10.0" y="781" width="655.6" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="13.00" y="791.5" >zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transp..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapField&lt;gz::msgs::SerializedEntityMap_ComponentsEntry_DoNotUse, long, gz::msgs::SerializedComponent,  (3,009,027 samples, 11.11%)</title><rect x="10.0" y="333" width="131.1" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="13.00" y="343.5" >google::protobuf..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapFieldLite&lt;gz::msgs::SerializedEntityMap_ComponentsEntry_DoNotUse, long, gz::msgs::SerializedComponent,  (3,009,027 samples, 11.11%)</title><rect x="10.0" y="317" width="131.1" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="13.00" y="327.5" >google::protobuf..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 7.41%)</title><rect x="709.3" y="541" width="87.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="712.26" y="551.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;zenoh::net::primitives::demux::DeMux as zenoh_transport::TransportPeerEventHandler&gt;::handle_message (1,003,009 samples, 3.70%)</title><rect x="971.5" y="621" width="43.7" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="974.48" y="631.5" >&lt;zen..</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;unsigned long, gz::msgs::SerializedEntityMap&gt; &gt;, bool&gt; google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::ArenaAwareTryEmplace&lt;unsigned long const&amp;&gt; (2,006,018 samples, 7.41%)</title><rect x="1015.2" y="413" width="87.4" height="15.0" fill="rgb(218,62,14)" rx="2" ry="2" />
+<text  x="1018.19" y="423.5" >std::pair&lt;..</text>
+</g>
+<g >
+<title>zenoh::api::handlers::callback::CallbackImpl::call_with_message (15,045,135 samples, 55.56%)</title><rect x="10.0" y="701" width="655.6" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="13.00" y="711.5" >zenoh::api::handlers::callback::CallbackImpl::call_with_message</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::Node::~Node (1,003,009 samples, 3.70%)</title><rect x="927.8" y="269" width="43.7" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="930.78" y="279.5" >goog..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::Resize (2,006,018 samples, 7.41%)</title><rect x="53.7" y="173" width="87.4" height="15.0" fill="rgb(252,217,52)" rx="2" ry="2" />
+<text  x="56.70" y="183.5" >google::pr..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapAllocator&lt;void*&gt;::allocate (2,006,018 samples, 7.41%)</title><rect x="53.7" y="125" width="87.4" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="56.70" y="135.5" >google::pr..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedEntityMap::_InternalParse (3,009,027 samples, 11.11%)</title><rect x="10.0" y="365" width="131.1" height="15.0" fill="rgb(207,12,3)" rx="2" ry="2" />
+<text  x="13.00" y="375.5" >gz::msgs::Serial..</text>
+</g>
+<g >
+<title>tokio::runtime::io::driver::Driver::turn (2,006,018 samples, 7.41%)</title><rect x="709.3" y="653" width="87.4" height="15.0" fill="rgb(212,33,8)" rx="2" ry="2" />
+<text  x="712.26" y="663.5" >tokio::run..</text>
+</g>
+<g >
+<title>QMetaMethod::invoke (1,003,009 samples, 3.70%)</title><rect x="621.9" y="541" width="43.7" height="15.0" fill="rgb(219,65,15)" rx="2" ry="2" />
+<text  x="624.85" y="551.5" >QMet..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::trigger_callback (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="781" width="174.8" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="1018.19" y="791.5" >zenoh_transport::unica..</text>
+</g>
+<g >
+<title>core::ops::function::FnOnce::call_once{{vtable.shim}} (5,015,045 samples, 18.52%)</title><rect x="665.6" y="749" width="218.5" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="668.56" y="759.5" >core::ops::function::FnOnce:..</text>
+</g>
+<g >
+<title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_replace (1,003,009 samples, 3.70%)</title><rect x="10.0" y="221" width="43.7" height="15.0" fill="rgb(226,98,23)" rx="2" ry="2" />
+<text  x="13.00" y="231.5" >std:..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::run (2,006,018 samples, 7.41%)</title><rect x="884.1" y="749" width="87.4" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="887.07" y="759.5" >tokio::run..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::EnsureZenohSubscription (2,006,018 samples, 7.41%)</title><rect x="884.1" y="557" width="87.4" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="887.07" y="567.5" >gz::transp..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::run (5,015,045 samples, 18.52%)</title><rect x="665.6" y="701" width="218.5" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="668.56" y="711.5" >tokio::runtime::scheduler::m..</text>
+</g>
+<g >
+<title>QMetaType::construct (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="541" width="174.8" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="1018.19" y="551.5" >QMetaType::construct</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (5,015,045 samples, 18.52%)</title><rect x="665.6" y="717" width="218.5" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="668.56" y="727.5" >tokio::runtime::task::raw::p..</text>
+</g>
+<g >
+<title>__GI___libc_malloc (10,030,090 samples, 37.04%)</title><rect x="141.1" y="205" width="437.0" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="144.11" y="215.5" >__GI___libc_malloc</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::InsertUnique (1,003,009 samples, 3.70%)</title><rect x="578.1" y="269" width="43.8" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="581.15" y="279.5" >goog..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStateMap::~SerializedStateMap (1,003,009 samples, 3.70%)</title><rect x="927.8" y="445" width="43.7" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="930.78" y="455.5" >gz::..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::~InnerMap (1,003,009 samples, 3.70%)</title><rect x="927.8" y="333" width="43.7" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="930.78" y="343.5" >goog..</text>
+</g>
+<g >
+<title>&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll (15,045,135 samples, 55.56%)</title><rect x="10.0" y="797" width="655.6" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="13.00" y="807.5" >&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll</text>
+</g>
+<g >
+<title>zenoh::net::routing::dispatcher::pubsub::route_data (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="749" width="174.8" height="15.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="1018.19" y="759.5" >zenoh::net::routing::d..</text>
+</g>
+<g >
+<title>zenoh::api::handlers::callback::CallbackImpl::call_with_message (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="717" width="174.8" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="1018.19" y="727.5" >zenoh::api::handlers::..</text>
+</g>
+<g >
+<title>z_sample_loan@plt (1,003,009 samples, 3.70%)</title><rect x="971.5" y="493" width="43.7" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="974.48" y="503.5" >z_sa..</text>
+</g>
+<g >
+<title>gz::transport::v16::SubscriptionHandler&lt;gz::msgs::SerializedStepMap&gt;::RunLocalCallback (1,003,009 samples, 3.70%)</title><rect x="884.1" y="525" width="43.7" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="887.07" y="535.5" >gz::..</text>
+</g>
+<g >
+<title>QMetaType::construct (1,003,009 samples, 3.70%)</title><rect x="621.9" y="525" width="43.7" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="624.85" y="535.5" >QMet..</text>
+</g>
+<g >
+<title>operator (2,006,018 samples, 7.41%)</title><rect x="884.1" y="589" width="87.4" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="887.07" y="599.5" >operator</text>
+</g>
+<g >
+<title>__GI___libc_malloc (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="189" width="43.7" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="1105.59" y="199.5" >__GI..</text>
+</g>
+<g >
+<title>gz::transport::v16::SubscriptionHandlerBase::UpdateThrottling (1,003,009 samples, 3.70%)</title><rect x="884.1" y="509" width="43.7" height="15.0" fill="rgb(243,175,42)" rx="2" ry="2" />
+<text  x="887.07" y="519.5" >gz::..</text>
+</g>
+<g >
+<title>operator new (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="205" width="43.7" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1105.59" y="215.5" >oper..</text>
+</g>
+<g >
+<title>std::_Sp_counted_base&lt; (1,003,009 samples, 3.70%)</title><rect x="927.8" y="541" width="43.7" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="930.78" y="551.5" >std:..</text>
+</g>
+<g >
+<title>std::sys::thread::unix::Thread::new::thread_start (1,003,009 samples, 3.70%)</title><rect x="971.5" y="781" width="43.7" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="974.48" y="791.5" >std:..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::~InnerMap (1,003,009 samples, 3.70%)</title><rect x="927.8" y="125" width="43.7" height="15.0" fill="rgb(253,221,52)" rx="2" ry="2" />
+<text  x="930.78" y="135.5" >goog..</text>
+</g>
+<g >
+<title>&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push (1,003,009 samples, 3.70%)</title><rect x="971.5" y="589" width="43.7" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="974.48" y="599.5" >&lt;zen..</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;long, gz::msgs::SerializedComponent&gt; &gt;, bool&gt; google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::TryEmplaceInternal&lt;long const&amp;&gt; (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="333" width="43.7" height="15.0" fill="rgb(223,82,19)" rx="2" ry="2" />
+<text  x="1105.59" y="343.5" >std:..</text>
+</g>
+<g >
+<title>zenoh::api::handlers::callback::CallbackImpl::call_with_message (1,003,009 samples, 3.70%)</title><rect x="971.5" y="573" width="43.7" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="974.48" y="583.5" >zeno..</text>
+</g>
+<g >
+<title>tokio::runtime::time::Driver::park_internal (2,006,018 samples, 7.41%)</title><rect x="709.3" y="669" width="87.4" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="712.26" y="679.5" >tokio::run..</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;long, gz::msgs::SerializedComponent&gt; &gt;, bool&gt; google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::try_emplace&lt;long const&amp;&gt; (2,006,018 samples, 7.41%)</title><rect x="53.7" y="253" width="87.4" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="56.70" y="263.5" >std::pair&lt;..</text>
+</g>
+<g >
+<title>google::protobuf::internal::InlineGreedyStringParser (1,003,009 samples, 3.70%)</title><rect x="10.0" y="237" width="43.7" height="15.0" fill="rgb(210,27,6)" rx="2" ry="2" />
+<text  x="13.00" y="247.5" >goog..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::trigger_callback (1,003,009 samples, 3.70%)</title><rect x="971.5" y="637" width="43.7" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="974.48" y="647.5" >zeno..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapField&lt;gz::msgs::SerializedStateMap_EntitiesEntry_DoNotUse, unsigned long, gz::msgs::SerializedEntityMap,  (1,003,009 samples, 3.70%)</title><rect x="927.8" y="397" width="43.7" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="930.78" y="407.5" >goog..</text>
+</g>
+<g >
+<title>withPayloadView&lt;gz::transport::v16::NodeShared::EnsureZenohSubscription (15,045,135 samples, 55.56%)</title><rect x="10.0" y="669" width="655.6" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="13.00" y="679.5" >withPayloadView&lt;gz::transport::v16::NodeShared::EnsureZenohSubscription</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;unsigned long, gz::msgs::SerializedEntityMap&gt; &gt;, bool&gt; google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::TryEmplaceInternal&lt;unsigned long const&amp;&gt; (11,033,099 samples, 40.74%)</title><rect x="141.1" y="333" width="480.8" height="15.0" fill="rgb(213,38,9)" rx="2" ry="2" />
+<text  x="144.11" y="343.5" >std::pair&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::Serializ..</text>
+</g>
+<g >
+<title>QMetaObject::invokeMethod (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="589" width="174.8" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="1018.19" y="599.5" >QMetaObject::invokeMet..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapAllocator&lt;void*&gt;::allocate (10,030,090 samples, 37.04%)</title><rect x="141.1" y="253" width="437.0" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="144.11" y="263.5" >google::protobuf::internal::MapAllocator&lt;void*&gt;::allocate</text>
+</g>
+<g >
+<title>google::protobuf::MapPair&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::~MapPair (1,003,009 samples, 3.70%)</title><rect x="927.8" y="253" width="43.7" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="930.78" y="263.5" >goog..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::DestroyNode (1,003,009 samples, 3.70%)</title><rect x="927.8" y="301" width="43.7" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="930.78" y="311.5" >goog..</text>
+</g>
+<g >
+<title>std::pair&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::iterator_base&lt;google::protobuf::MapPair&lt;unsigned long, gz::msgs::SerializedEntityMap&gt; &gt;, bool&gt; google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::try_emplace&lt;unsigned long const&amp;&gt; (11,033,099 samples, 40.74%)</title><rect x="141.1" y="365" width="480.8" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="144.11" y="375.5" >std::pair&lt;google::protobuf::Map&lt;unsigned long, gz::msgs::Serializ..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStepMap::SerializedStepMap (1,003,009 samples, 3.70%)</title><rect x="621.9" y="509" width="43.7" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="624.85" y="519.5" >gz::..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="796.7" y="445" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="799.67" y="455.5" >[unk..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::CreateEmptyTable (10,030,090 samples, 37.04%)</title><rect x="141.1" y="285" width="437.0" height="15.0" fill="rgb(225,95,22)" rx="2" ry="2" />
+<text  x="144.11" y="295.5" >google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEn..</text>
+</g>
+<g >
+<title>[unknown] (2,006,018 samples, 7.41%)</title><rect x="709.3" y="621" width="87.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="712.26" y="631.5" >[unknown]</text>
+</g>
+<g >
+<title>std::sys::backtrace::__rust_begin_short_backtrace (5,015,045 samples, 18.52%)</title><rect x="665.6" y="733" width="218.5" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="668.56" y="743.5" >std::sys::backtrace::__rust_..</text>
+</g>
+<g >
+<title>void** google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::Alloc&lt;void*&gt; (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="253" width="43.7" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="1105.59" y="263.5" >void..</text>
+</g>
+<g >
+<title>withPayloadView&lt;gz::transport::v16::NodeShared::EnsureZenohSubscription (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="685" width="174.8" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1018.19" y="695.5" >withPayloadView&lt;gz::tr..</text>
+</g>
+<g >
+<title>operator new (10,030,090 samples, 37.04%)</title><rect x="141.1" y="221" width="437.0" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="144.11" y="231.5" >operator new</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapTypeHandler&lt; (1,003,009 samples, 3.70%)</title><rect x="10.0" y="285" width="43.7" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="13.00" y="295.5" >goog..</text>
+</g>
+<g >
+<title>google::protobuf::MapPair&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;&amp; google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::operator[]&lt;unsigned long const&amp;&gt; (2,006,018 samples, 7.41%)</title><rect x="1015.2" y="445" width="87.4" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="1018.19" y="455.5" >google::pr..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;unsigned long, gz::msgs::SerializedEntityMap&gt;::InnerMap::DestroyNode (1,003,009 samples, 3.70%)</title><rect x="927.8" y="285" width="43.7" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="930.78" y="295.5" >goog..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="796.7" y="589" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="799.67" y="599.5" >[unk..</text>
+</g>
+<g >
+<title>malloc_consolidate (10,030,090 samples, 37.04%)</title><rect x="141.1" y="173" width="437.0" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="144.11" y="183.5" >malloc_consolidate</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="796.7" y="557" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="799.67" y="567.5" >[unk..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="796.7" y="573" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="799.67" y="583.5" >[unk..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="796.7" y="493" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="799.67" y="503.5" >[unk..</text>
+</g>
+<g >
+<title>zenoh_transport::unicast::universal::rx::&lt;impl zenoh_transport::unicast::universal::transport::TransportUnicastUniversal&gt;::read_messages (1,003,009 samples, 3.70%)</title><rect x="840.4" y="637" width="43.7" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="843.37" y="647.5" >zeno..</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapEntryImpl&lt;gz::msgs::SerializedStateMap_EntitiesEntry_DoNotUse, google::protobuf::Message, unsigned long, gz::msgs::SerializedEntityMap,  (14,042,126 samples, 51.85%)</title><rect x="10.0" y="413" width="611.9" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="13.00" y="423.5" >google::protobuf::internal::MapEntryImpl&lt;gz::msgs::SerializedStateMap_EntitiesEntry_..</text>
+</g>
+<g >
+<title>gz::msgs::SerializedEntityMap::~SerializedEntityMap (1,003,009 samples, 3.70%)</title><rect x="927.8" y="221" width="43.7" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="930.78" y="231.5" >gz::..</text>
+</g>
+<g >
+<title>&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll (1,003,009 samples, 3.70%)</title><rect x="971.5" y="669" width="43.7" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="974.48" y="679.5" >&lt;tok..</text>
+</g>
+<g >
+<title>gz::transport::v16::NodeShared::TriggerCallbacks (15,045,135 samples, 55.56%)</title><rect x="10.0" y="637" width="655.6" height="15.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="13.00" y="647.5" >gz::transport::v16::NodeShared::TriggerCallbacks</text>
+</g>
+<g >
+<title>operator (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="701" width="174.8" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="1018.19" y="711.5" >operator</text>
+</g>
+<g >
+<title>gz::msgs::SerializedStateMap::SerializedStateMap (1,003,009 samples, 3.70%)</title><rect x="621.9" y="493" width="43.7" height="15.0" fill="rgb(248,202,48)" rx="2" ry="2" />
+<text  x="624.85" y="503.5" >gz::..</text>
+</g>
+<g >
+<title>__GI___libc_write (1,003,009 samples, 3.70%)</title><rect x="796.7" y="621" width="43.7" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="799.67" y="631.5" >__GI..</text>
+</g>
+<g >
+<title>[unknown] (1,003,009 samples, 3.70%)</title><rect x="796.7" y="509" width="43.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="799.67" y="519.5" >[unk..</text>
+</g>
+<g >
+<title>google::protobuf::internal::ArenaStringPtr::Set (1,003,009 samples, 3.70%)</title><rect x="1146.3" y="349" width="43.7" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="1149.30" y="359.5" >goog..</text>
+</g>
+<g >
+<title>operator (15,045,135 samples, 55.56%)</title><rect x="10.0" y="685" width="655.6" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="13.00" y="695.5" >operator</text>
+</g>
+<g >
+<title>google::protobuf::internal::MapEntryImpl&lt;gz::msgs::SerializedEntityMap_ComponentsEntry_DoNotUse, google::protobuf::Message, long, gz::msgs::SerializedComponent,  (3,009,027 samples, 11.11%)</title><rect x="10.0" y="301" width="131.1" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="13.00" y="311.5" >google::protobuf..</text>
+</g>
+<g >
+<title>QMetaObject::invokeMethod (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="573" width="174.8" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="1018.19" y="583.5" >QMetaObject::invokeMet..</text>
+</g>
+<g >
+<title>google::protobuf::Map&lt;long, gz::msgs::SerializedComponent&gt;::InnerMap::Resize (1,003,009 samples, 3.70%)</title><rect x="1102.6" y="301" width="43.7" height="15.0" fill="rgb(252,217,52)" rx="2" ry="2" />
+<text  x="1105.59" y="311.5" >goog..</text>
+</g>
+<g >
+<title>&lt;zenoh::api::session::WeakSession as zenoh::net::primitives::EPrimitives&gt;::send_push (4,012,036 samples, 14.81%)</title><rect x="1015.2" y="733" width="174.8" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1018.19" y="743.5" >&lt;zenoh::api::session::..</text>
+</g>
+<g >
+<title>char const* google::protobuf::internal::ParseContext::ParseMessage&lt;google::protobuf::internal::MapField&lt;gz::msgs::SerializedStateMap_EntitiesEntry_DoNotUse, unsigned long, gz::msgs::SerializedEntityMap,  (14,042,126 samples, 51.85%)</title><rect x="10.0" y="461" width="611.9" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="13.00" y="471.5" >char const* google::protobuf::internal::ParseContext::ParseMessage&lt;google::protobuf:..</text>
+</g>
+</g>
+</svg>
