@@ -1,0 +1,27 @@
+============================================
+  Unified Profiling Summary: jetty
+============================================
+  Dimensions: cpu
+  CPU total:  29897692272 samples
+
+  Rank Function                                           Score   CPU%  Cache  HITM% Sched Sources
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1	gz::sim::v11::systems::Physics::Update	40	97.8	-	-	-	cpu
+2	gz::sim::v11::systems::PhysicsPrivate::Step	40	96.8	-	-	-	cpu
+3	gz::sim::v11::SimulationRunner::UpdateSystems	40	99.7	-	-	-	cpu
+4	gz::sim::v11::SimulationRunner::Step	40	99.7	-	-	-	cpu
+5	gz::sim::v11::SimulationRunner::Run	40	99.8	-	-	-	cpu
+6	gz::sim::v11::ServerPrivate::Run	40	99.8	-	-	-	cpu
+7	gz::physics::ForwardStep::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList>::Step	40	96.7	-	-	-	cpu
+8	gz::physics::dartsim::SimulationFeatures::WorldForwardStep	40	96.1	-	-	-	cpu
+9	gz::physics::dartsim::BitmaskContactFilter::ignoresCollision	40	16.2	-	-	-	cpu
+10	gz::physics::dartsim::GzContactSurfaceHandler::createParams	10	1.2	-	-	-	cpu
+11	gz::physics::dartsim::GzContactSurfaceHandler::createConstraint	10	1.8	-	-	-	cpu
+12	void std::__invoke_impl<void, gz::physics::SetContactPropertiesCallbackFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::SetContactPropertiesCallbackFeatureList>::AddContactPropertiesCallback	5	0.5	-	-	-	cpu
+13	std::enable_if<is_invocable_r_v<void, gz::physics::SetContactPropertiesCallbackFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::SetContactPropertiesCallbackFeatureList>::AddContactPropertiesCallback	5	0.5	-	-	-	cpu
+14	gz::sim::v11::systems::Sensors::PostUpdate	5	0.8	-	-	-	cpu
+15	gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics	5	0.5	-	-	-	cpu
+16	gz::sim::v11::RenderUtil::UpdateFromECM	5	0.7	-	-	-	cpu
+17	gz::sim::v11::RenderUtilPrivate::UpdateRenderingEntities	5	0.6	-	-	-	cpu
+18	gz::physics::SetContactPropertiesCallbackFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::SetContactPropertiesCallbackFeatureList>::AddContactPropertiesCallback	5	0.5	-	-	-	cpu
+19	gz::physics::dartsim::SimulationFeatures::Write	5	0.5	-	-	-	cpu

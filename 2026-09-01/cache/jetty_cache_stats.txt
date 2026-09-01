@@ -1,0 +1,18 @@
+============================================
+  Cache Stats: PID 940776 (10s sample)
+============================================
+
+
+ Performance counter stats for process id '940776':
+
+     2,015,135,554      cpu_core/cache-references/                                              (99.98%)
+        59,896,153      cpu_core/cache-misses/           #    2.97% of all cache refs           (99.98%)
+    37,881,985,576      cpu_core/L1-dcache-loads/                                               (99.98%)
+       718,327,406      cpu_core/L1-dcache-load-misses/  #    1.90% of all L1-dcache accesses   (99.98%)
+       275,662,697      cpu_core/LLC-loads/                                                     (99.98%)
+         1,336,138      cpu_core/LLC-load-misses/        #    0.48% of all LL-cache accesses    (99.98%)
+   103,574,728,222      cpu_core/instructions/           #    2.11  insn per cycle              (99.98%)
+    49,185,363,138      cpu_core/cycles/                                                        (99.98%)
+
+      10.006896528 seconds time elapsed
+

@@ -1,0 +1,71 @@
+# Unified profiling summary: moving_robots_and_sensors
+# Date: 2026-09-01 22:39
+# Dimensions available: cpu
+# Scoring: cpu(0-40) + cache(0-20) + offcpu(0-15) + c2c(0-15) + sched(0-10) = 0-100
+rank	function_name	score	cpu_pct	cache_ratio	offcpu_us	hitm_pct	sched_flag	evidence_sources
+1	gz::sim::v11::systems::SensorsPrivate::RunOnce	40	34.1	-	-	-	cpu
+2	gz::sim::v11::systems::SensorsPrivate::RenderThread	40	34.1	-	-	-	cpu
+3	gz::sim::v11::systems::Physics::Update	40	59.7	-	-	-	cpu
+4	gz::sim::v11::systems::PhysicsPrivate::Step	40	49.3	-	-	-	cpu
+5	gz::sim::v11::SimulationRunner::UpdateSystems	40	63.5	-	-	-	cpu
+6	gz::sim::v11::SimulationRunner::Step	40	63.7	-	-	-	cpu
+7	gz::sim::v11::SimulationRunner::Run	40	63.8	-	-	-	cpu
+8	gz::sim::v11::ServerPrivate::Run	40	63.8	-	-	-	cpu
+9	gz::sensors::v11::Sensor::Update	40	33.6	-	-	-	cpu
+10	gz::sensors::v11::RgbdCameraSensor::Update	40	14.3	-	-	-	cpu
+11	gz::sensors::v11::RenderingSensor::Render	40	27.5	-	-	-	cpu
+12	gz::sensors::v11::Manager::RunOnce	40	33.1	-	-	-	cpu
+13	gz::sensors::v11::CameraSensor::Update	40	10.3	-	-	-	cpu
+14	gz::physics::ForwardStep::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList>::Step	40	49.1	-	-	-	cpu
+15	gz::physics::dartsim::SimulationFeatures::WorldForwardStep	40	48.7	-	-	-	cpu
+16	gz::sim::v11::systems::PhysicsPrivate::UpdateSim	25	8.1	-	-	-	cpu
+17	gz::sim::v11::systems::PhysicsPrivate::UpdateCollisions	25	5.9	-	-	-	cpu
+18	gz::sensors::v11::ThermalCameraSensor::Update	25	7.2	-	-	-	cpu
+19	gz::rendering::v11::Ogre2RenderTarget::Render	25	8.1	-	-	-	cpu
+20	gz::rendering::v11::Ogre2GpuReadbackTicket::DownloadAndMap	25	5.3	-	-	-	cpu
+21	gz::rendering::v11::Ogre2DepthCamera::PostRender	25	6.1	-	-	-	cpu
+22	gz::transport::v16::Node::Publisher::Publish	10	1.9	-	-	-	cpu
+23	gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics	10	1.1	-	-	-	cpu
+24	gz::sensors::v11::PointCloudUtil::FillMsg	10	1.8	-	-	-	cpu
+25	gz::sensors::v11::GpuLidarSensor::Update	10	1.5	-	-	-	cpu
+26	gz::rendering::v11::Ogre2ThermalCamera::Render	10	3.9	-	-	-	cpu
+27	gz::rendering::v11::Ogre2ThermalCamera::PostRender	10	3.0	-	-	-	cpu
+28	gz::rendering::v11::Ogre2RenderTarget::Copy	10	1.8	-	-	-	cpu
+29	gz::rendering::v11::Ogre2DepthCamera::Render	10	4.9	-	-	-	cpu
+30	gz::rendering::v11::BaseCamera<gz::rendering::v11::Ogre2Sensor>::Copy	10	1.8	-	-	-	cpu
+31	gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::GetContactsFromLastStep	10	4.3	-	-	-	cpu
+32	gz::physics::dartsim::SimulationFeatures::GetContactsFromLastStep	10	2.7	-	-	-	cpu
+33	gz::physics::dartsim::SimulationFeatures::convertContact	10	1.2	-	-	-	cpu
+34	void std::__new_allocator<gz::physics::SpecifyData<gz::physics::RequireData<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint>, gz::physics::ExpectData<gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > > > >::construct<gz::physics::SpecifyData<gz::physics::RequireData<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint>, gz::physics::ExpectData<gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > > >>	5	0.6	-	-	-	cpu
+35	void std::allocator_traits<std::allocator<gz::physics::SpecifyData<gz::physics::RequireData<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint>, gz::physics::ExpectData<gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > > > > >::construct<gz::physics::SpecifyData<gz::physics::RequireData<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint>, gz::physics::ExpectData<gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > > >>	5	0.6	-	-	-	cpu
+36	void gz::sim::v11::EntityComponentManager::Each<gz::sim::v11::components::Component<std::add_lvalue_reference<void>, gz::sim::v11::components::JointTag, gz::sim::v11::serializers::DefaultSerializer<std::add_lvalue_reference<void> > >, gz::sim::v11::components::Component<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, gz::sim::v11::components::NameTag, gz::sim::v11::serializers::StringSerializer>, gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics	5	0.9	-	-	-	cpu
+37	void gz::common::EventT<void 	5	0.7	-	-	-	cpu
+38	void google::protobuf::internal::RepeatedPtrFieldBase::MergeFromInnerLoop<google::protobuf::RepeatedPtrField<gz::msgs::JointWrench>::TypeHandler>	5	0.6	-	-	-	cpu
+39	void google::protobuf::internal::RepeatedPtrFieldBase::MergeFrom<google::protobuf::RepeatedPtrField<gz::msgs::JointWrench>::TypeHandler>	5	0.6	-	-	-	cpu
+40	std::unordered_map<unsigned long, std::deque<std::pair<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint const*, gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > const*>, std::allocator<std::pair<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint const*, gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > const*> > >, std::hash<unsigned long>, std::equal_to<unsigned long>, std::allocator<std::pair<unsigned long const, std::deque<std::pair<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint const*, gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > const*>, std::allocator<std::pair<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint const*, gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > const*> > > > > >::operator[]	5	0.5	-	-	-	cpu
+41	std::__detail::_Map_base<unsigned long, std::pair<unsigned long const, std::deque<std::pair<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint const*, gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > const*>, std::allocator<std::pair<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint const*, gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > const*> > > >, std::allocator<std::pair<unsigned long const, std::deque<std::pair<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint const*, gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > const*>, std::allocator<std::pair<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint const*, gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > const*> > > > >, std::__detail::_Select1st, std::equal_to<unsigned long>, std::hash<unsigned long>, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<false, false, true>, true>::operator[]	5	0.5	-	-	-	cpu
+42	gz::sim::v11::systems::Sensors::PostUpdate	5	0.7	-	-	-	cpu
+43	gz::sim::v11::systems::PhysicsPrivate::ChangedLinks	5	0.8	-	-	-	cpu
+44	gz::sim::v11::systems::ContactPrivate::UpdateSensors	5	0.7	-	-	-	cpu
+45	gz::sim::v11::systems::Contact::PostUpdate	5	0.9	-	-	-	cpu
+46	gz::sim::v11::RenderUtil::UpdateFromECM	5	0.5	-	-	-	cpu
+47	gz::sim::v11::EntityComponentManager::SetChanged	5	0.5	-	-	-	cpu
+48	gz::sensors::v11::RgbdCameraSensor::Implementation::OnNewRgbPointCloud	5	0.5	-	-	-	cpu
+49	gz::rendering::v11::Ogre2GpuRays::UpdateRenderTarget1stPass	5	0.6	-	-	-	cpu
+50	gz::rendering::v11::Ogre2GpuRays::Render	5	0.7	-	-	-	cpu
+51	gz::rendering::v11::Ogre2GpuRays::PostRender	5	0.7	-	-	-	cpu
+52	gz::physics::SpecifyData<gz::physics::RequireData<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint>, gz::physics::ExpectData<gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > > >& std::vector<gz::physics::SpecifyData<gz::physics::RequireData<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint>, gz::physics::ExpectData<gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > > >, std::allocator<gz::physics::SpecifyData<gz::physics::RequireData<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint>, gz::physics::ExpectData<gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > > > > >::emplace_back<>	5	0.6	-	-	-	cpu
+53	gz::physics::SpecifyData<gz::physics::RequireData<gz::physics::GetContactsFromLastStepFeature::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList>::ContactPoint>, gz::physics::ExpectData<gz::physics::GetContactsFromLastStepFeature::ExtraContactDataT<gz::physics::FeaturePolicy<double, 3ul> > > >::SpecifyData	5	0.6	-	-	-	cpu
+54	gz::physics::FrameSemantics::Frame<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList>::FrameDataRelativeToWorld	5	0.5	-	-	-	cpu
+55	gz::physics::dartsim::KinematicsFeatures::FrameDataRelativeToWorld	5	0.6	-	-	-	cpu
+56	gz::msgs::Wrench::MergeImpl	5	0.5	-	-	-	cpu
+57	gz::msgs::Wrench::MergeFrom	5	0.5	-	-	-	cpu
+58	gz::msgs::Wrench::_internal_mutable_force	5	0.5	-	-	-	cpu
+59	gz::msgs::Vector3d* google::protobuf::MessageLite::CreateMaybeMessage<gz::msgs::Vector3d>	5	0.5	-	-	-	cpu
+60	gz::msgs::Vector3d* google::protobuf::Arena::DoCreateMessage<gz::msgs::Vector3d>	5	0.5	-	-	-	cpu
+61	gz::msgs::Vector3d* google::protobuf::Arena::CreateMessageInternal<gz::msgs::Vector3d>	5	0.6	-	-	-	cpu
+62	gz::msgs::Vector3d* google::protobuf::Arena::CreateMaybeMessage<gz::msgs::Vector3d>	5	0.6	-	-	-	cpu
+63	gz::msgs::PointCloudPacked::_InternalSerialize	5	0.6	-	-	-	cpu
+64	gz::msgs::JointWrench::MergeImpl	5	0.6	-	-	-	cpu
+65	gz::msgs::Contact::MergeImpl	5	0.7	-	-	-	cpu
+66	google::protobuf::RepeatedPtrField<gz::msgs::JointWrench>::MergeFrom	5	0.6	-	-	-	cpu

@@ -1,0 +1,18 @@
+============================================
+  Cache Stats: PID 941583 (10s sample)
+============================================
+
+
+ Performance counter stats for process id '941583':
+
+       852,514,056      cpu_core/cache-references/                                              (67.45%)
+       261,710,722      cpu_core/cache-misses/           #   30.70% of all cache refs           (67.45%)
+    47,678,769,529      cpu_core/L1-dcache-loads/                                               (67.45%)
+       349,017,731      cpu_core/L1-dcache-load-misses/  #    0.73% of all L1-dcache accesses   (67.46%)
+        78,703,679      cpu_core/LLC-loads/                                                     (67.46%)
+        30,674,159      cpu_core/LLC-load-misses/        #   38.97% of all LL-cache accesses    (67.46%)
+   179,085,368,825      cpu_core/instructions/           #    2.65  insn per cycle              (67.46%)
+    67,593,030,539      cpu_core/cycles/                                                        (67.45%)
+
+      10.001992975 seconds time elapsed
+

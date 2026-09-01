@@ -1,0 +1,50 @@
+# Unified profiling summary: gpu_lidar_sensor
+# Date: 2026-09-01 22:39
+# Dimensions available: cpu
+# Scoring: cpu(0-40) + cache(0-20) + offcpu(0-15) + c2c(0-15) + sched(0-10) = 0-100
+rank	function_name	score	cpu_pct	cache_ratio	offcpu_us	hitm_pct	sched_flag	evidence_sources
+1	gz::sim::v11::systems::SensorsPrivate::RunOnce	40	25.7	-	-	-	cpu
+2	gz::sim::v11::systems::SensorsPrivate::RenderThread	40	25.7	-	-	-	cpu
+3	gz::sim::v11::systems::Physics::Update	40	64.2	-	-	-	cpu
+4	gz::sim::v11::systems::PhysicsPrivate::Step	40	59.2	-	-	-	cpu
+5	gz::sim::v11::SimulationRunner::UpdateSystems	40	70.6	-	-	-	cpu
+6	gz::sim::v11::SimulationRunner::Step	40	72.2	-	-	-	cpu
+7	gz::sim::v11::SimulationRunner::Run	40	72.5	-	-	-	cpu
+8	gz::sim::v11::ServerPrivate::Run	40	72.5	-	-	-	cpu
+9	gz::sensors::v11::Sensor::Update	40	24.3	-	-	-	cpu
+10	gz::sensors::v11::RenderingSensor::Render	40	20.1	-	-	-	cpu
+11	gz::sensors::v11::Manager::RunOnce	40	24.3	-	-	-	cpu
+12	gz::sensors::v11::GpuLidarSensor::Update	40	24.2	-	-	-	cpu
+13	gz::rendering::v11::Ogre2GpuRays::Render	40	10.4	-	-	-	cpu
+14	gz::physics::ForwardStep::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList>::Step	40	57.7	-	-	-	cpu
+15	gz::physics::dartsim::SimulationFeatures::WorldForwardStep	40	56.9	-	-	-	cpu
+16	gz::rendering::v11::Ogre2GpuReadbackTicket::DownloadAndMap	25	8.2	-	-	-	cpu
+17	gz::rendering::v11::Ogre2GpuRays::UpdateRenderTarget1stPass	25	9.6	-	-	-	cpu
+18	gz::rendering::v11::Ogre2GpuRays::PostRender	25	9.2	-	-	-	cpu
+19	gz::transport::v16::Node::Publisher::Publish	10	1.0	-	-	-	cpu
+20	gz::transport::v16::Node::Publisher::HasConnections	10	1.7	-	-	-	cpu
+21	gz::sim::v11::systems::Sensors::PostUpdate	10	4.9	-	-	-	cpu
+22	gz::sim::v11::systems::SceneBroadcaster::PostUpdate	10	1.1	-	-	-	cpu
+23	gz::sim::v11::systems::PhysicsPrivate::UpdateSim	10	1.2	-	-	-	cpu
+24	gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics	10	1.6	-	-	-	cpu
+25	gz::sim::v11::RenderUtil::UpdateFromECM	10	3.8	-	-	-	cpu
+26	gz::sim::v11::RenderUtilPrivate::CreateRenderingEntities	10	2.1	-	-	-	cpu
+27	gz::sim::v11::RenderUtilPrivate::CreateEntitiesRuntime	10	2.1	-	-	-	cpu
+28	gz::sensors::v11::Lidar::PublishLidarScan	10	4.3	-	-	-	cpu
+29	gz::sensors::v11::Lidar::Clamp	10	1.8	-	-	-	cpu
+30	unsigned int gz::sim::v11::EventManager::ConnectionCount<gz::common::EventT<void 	5	0.7	-	-	-	cpu
+31	std::unordered_map<std::reference_wrapper<std::type_info const>, std::unique_ptr<gz::common::Event, std::default_delete<gz::common::Event> >, gz::sim::v11::EventManager::Hasher, gz::sim::v11::EventManager::EqualTo, std::allocator<std::pair<std::reference_wrapper<std::type_info const> const, std::unique_ptr<gz::common::Event, std::default_delete<gz::common::Event> > > > >::find	5	0.5	-	-	-	cpu
+32	std::_Hashtable<std::reference_wrapper<std::type_info const>, std::pair<std::reference_wrapper<std::type_info const> const, std::unique_ptr<gz::common::Event, std::default_delete<gz::common::Event> > >, std::allocator<std::pair<std::reference_wrapper<std::type_info const> const, std::unique_ptr<gz::common::Event, std::default_delete<gz::common::Event> > > >, std::__detail::_Select1st, gz::sim::v11::EventManager::EqualTo, gz::sim::v11::EventManager::Hasher, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<true, false, true> >::find	5	0.5	-	-	-	cpu
+33	std::__detail::_Hash_code_base<std::reference_wrapper<std::type_info const>, std::pair<std::reference_wrapper<std::type_info const> const, std::unique_ptr<gz::common::Event, std::default_delete<gz::common::Event> > >, std::__detail::_Select1st, gz::sim::v11::EventManager::Hasher, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, true>::_M_hash_code	5	0.5	-	-	-	cpu
+34	gz::sim::v11::systems::PhysicsPrivate::CreatePhysicsEntities	5	0.9	-	-	-	cpu
+35	gz::sim::v11::SimulationRunner::PublishStats	5	0.9	-	-	-	cpu
+36	gz::sim::v11::RenderUtil::Update	5	0.6	-	-	-	cpu
+37	gz::sim::v11::RenderUtilPrivate::UpdateRenderingEntities	5	0.8	-	-	-	cpu
+38	gz::sim::v11::RenderUtilPrivate::RemoveRenderingEntities	5	0.9	-	-	-	cpu
+39	gz::sim::v11::EventManager::Hasher::operator	5	0.5	-	-	-	cpu
+40	gz::sensors::v11::Lidar::RangeCount	5	0.7	-	-	-	cpu
+41	gz::rendering::v11::Ogre2Scene::FlushGpuCommandsAndStartNewFrame	5	0.5	-	-	-	cpu
+42	gz::rendering::v11::Ogre2GpuRays::UpdateRenderTarget2ndPass	5	0.6	-	-	-	cpu
+43	gz::physics::dartsim::SimulationFeatures::Write	5	0.6	-	-	-	cpu
+44	gz::physics::dartsim::BitmaskContactFilter::ignoresCollision	5	0.6	-	-	-	cpu
+45	gz::msgs::LaserScan::_InternalSerialize	5	0.6	-	-	-	cpu

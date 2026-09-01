@@ -1,0 +1,28 @@
+============================================
+  Unified Profiling Summary: sensors
+============================================
+  Dimensions: cpu
+  CPU total:  42135405081 samples
+
+  Rank Function                                           Score   CPU%  Cache  HITM% Sched Sources
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1	gz::sim::v11::systems::SensorsPrivate::RunOnce	40	65.9	-	-	-	cpu
+2	gz::sim::v11::systems::SensorsPrivate::RenderThread	40	65.8	-	-	-	cpu
+3	gz::sim::v11::systems::Physics::Update	40	30.3	-	-	-	cpu
+4	gz::sim::v11::systems::PhysicsPrivate::Step	40	29.3	-	-	-	cpu
+5	gz::sim::v11::SimulationRunner::UpdateSystems	40	31.7	-	-	-	cpu
+6	gz::sim::v11::SimulationRunner::Step	40	32.0	-	-	-	cpu
+7	gz::sim::v11::SimulationRunner::Run	40	32.0	-	-	-	cpu
+8	gz::sim::v11::ServerPrivate::Run	40	32.0	-	-	-	cpu
+9	gz::sensors::v11::Sensor::Update	40	64.8	-	-	-	cpu
+10	gz::sensors::v11::RgbdCameraSensor::Update	40	20.5	-	-	-	cpu
+11	gz::sensors::v11::RenderingSensor::Render	40	53.4	-	-	-	cpu
+12	gz::sensors::v11::Manager::RunOnce	40	64.8	-	-	-	cpu
+13	gz::sensors::v11::CameraSensor::Update	40	31.8	-	-	-	cpu
+14	gz::rendering::v11::Ogre2RenderTarget::Render	40	27.0	-	-	-	cpu
+15	gz::physics::ForwardStep::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList>::Step	40	28.9	-	-	-	cpu
+16	gz::physics::dartsim::SimulationFeatures::WorldForwardStep	40	28.6	-	-	-	cpu
+17	gz::sensors::v11::ThermalCameraSensor::Update	25	8.9	-	-	-	cpu
+18	gz::rendering::v11::Ogre2ThermalCamera::Render	25	6.6	-	-	-	cpu
+19	gz::rendering::v11::Ogre2GpuReadbackTicket::DownloadAndMap	25	5.1	-	-	-	cpu
+20	gz::rendering::v11::Ogre2DepthCamera::Render	25	8.4	-	-	-	cpu

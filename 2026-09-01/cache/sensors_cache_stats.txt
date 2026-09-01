@@ -1,0 +1,18 @@
+============================================
+  Cache Stats: PID 941969 (10s sample)
+============================================
+
+
+ Performance counter stats for process id '941969':
+
+         1,284,252      cpu_core/cache-references/                                              (99.99%)
+           258,121      cpu_core/cache-misses/           #   20.10% of all cache refs           (99.99%)
+    40,024,568,728      cpu_core/L1-dcache-loads/                                               (99.99%)
+        38,954,300      cpu_core/L1-dcache-load-misses/  #    0.10% of all L1-dcache accesses   (99.99%)
+           326,067      cpu_core/LLC-loads/                                                     (99.99%)
+            20,378      cpu_core/LLC-load-misses/        #    6.25% of all LL-cache accesses    (99.99%)
+   131,821,467,252      cpu_core/instructions/           #    2.71  insn per cycle              (99.99%)
+    48,577,286,900      cpu_core/cycles/                                                        (99.99%)
+
+      10.004748195 seconds time elapsed
+

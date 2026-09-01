@@ -1,6 +1,8 @@
+/camera_alone
 /camera
 /depth_camera
-/rgbd_camera
+/rgbd_camera/image
+/rgbd_camera/depth_image
+/rgbd_camera/points
 /thermal_camera
-/segmentation_camera
 /lidar

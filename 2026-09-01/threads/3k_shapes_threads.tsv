@@ -1,0 +1,5 @@
+# Per-thread analysis: 3k_shapes
+# Source: captures/runtime/perf_3k_shapes.data
+# Total samples: 29979939010
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz-sim-main/927373	29979939010	100.0	[libdart.so.6.13.2]	18.2

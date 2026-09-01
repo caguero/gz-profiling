@@ -1,0 +1,18 @@
+============================================
+  Cache Stats: PID 940248 (10s sample)
+============================================
+
+
+ Performance counter stats for process id '940248':
+
+     2,945,552,749      cpu_core/cache-references/                                              (99.99%)
+     1,005,329,550      cpu_core/cache-misses/           #   34.13% of all cache refs           (99.99%)
+    11,552,209,288      cpu_core/L1-dcache-loads/                                               (99.99%)
+     1,015,950,257      cpu_core/L1-dcache-load-misses/  #    8.79% of all L1-dcache accesses   (99.99%)
+       582,524,733      cpu_core/LLC-loads/                                                     (99.99%)
+        91,353,352      cpu_core/LLC-load-misses/        #   15.68% of all LL-cache accesses    (99.99%)
+    36,556,596,883      cpu_core/instructions/           #    0.71  insn per cycle              (99.99%)
+    51,804,434,244      cpu_core/cycles/                                                        (99.99%)
+
+      10.002477444 seconds time elapsed
+

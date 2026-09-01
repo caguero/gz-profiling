@@ -1,0 +1,37 @@
+\usepackage{float}
+\floatplacement{figure}{H}
+\usepackage{geometry}
+\geometry{margin=0.6in}
+\usepackage{microtype}
+\emergencystretch=6em
+% Reduce automatic word-break hyphenation
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\tolerance=2000
+\setlength{\parskip}{0.5em}
+
+% Shrink monospace font to avoid code/paths overflowing margins
+\usepackage{fvextra}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\},fontsize=\small}
+
+% Force separate title page
+\usepackage{xurl}
+\usepackage{graphicx}
+\renewcommand{\maketitle}{
+  \begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\Huge\bfseries Gazebo Server Performance Profiling Report\par}
+    \vspace{0.4cm}
+    {\large gz-sim PR \#3447 (EnTT ECM) with gz-transport Zenoh 1.8 + shared memory (PRs \#868, \#842)\par}
+    \vspace{1.5cm}
+    \includegraphics[width=0.3\textwidth]{figures/gazebo_logo.png}\par
+    \vspace{1.5cm}
+    {\Large Carlos Ag\"uero\par}
+    \vspace{0.3cm}
+    {\normalsize caguero@honurobotics.com\par}
+    \vspace{1cm}
+    {\large September 2026\par}
+    \vfill
+  \end{titlepage}
+}

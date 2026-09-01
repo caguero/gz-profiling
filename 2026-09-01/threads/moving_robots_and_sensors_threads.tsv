@@ -1,0 +1,10 @@
+# Per-thread analysis: moving_robots_and_sensors
+# Source: captures/runtime/perf_moving_robots_and_sensors.data
+# Total samples: 44558674825
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz-sim-main/929778	28595786590	64.1	[libdart.so.6.13.2]	18.1
+gz-sim-main/929811	15317953448	34.3	[libnvidia-eglcore.so.580.159.03]	19.8
+tx-0/929923	573721148	1.2	[unknown]	68.5
+gz-sim-main/929813	66198594	.1	[unknown]	40.9
+Watchdog_Confir/930167	3009027	0	std::sync::mpmc::waker::SyncWaker::unregister.8381	33.3
+Watchdog_Valida/930168	2006018	0	zenoh_shm::watchdog::validator::WatchdogValidator::new::{{closure}}	50.0

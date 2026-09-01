@@ -8,6 +8,11 @@
 # The flamegraph shows where time goes during SDF parsing, mesh loading,
 # DART construction, ogre2 scene setup, etc.
 #
+# Notes:
+#   - Samples task-clock (not cycles): on hybrid P/E core CPUs the default
+#     cycles event is split into cpu_core/cpu_atom PMUs and perf script keeps
+#     only one of them, silently dropping about half of the samples.
+#
 # Prerequisites:
 #   - Workspace built with ENABLE_PROFILER=OFF, RelWithDebInfo, -fno-omit-frame-pointer
 #   - sudo sysctl kernel.perf_event_paranoid=1
@@ -63,7 +68,7 @@ echo ""
 # Capture: wrap entire process with perf
 # --iterations 1: exit after startup + 1 simulation step
 echo "[1/4] Recording loading with perf (startup + 1 iteration)..."
-{ time perf record -F 997 --call-graph dwarf \
+{ time perf record -e task-clock -F 997 --call-graph dwarf \
     -o "$OUTPUT_DIR/perf_${LABEL}_loading.data" \
     -- "$GZ_SIM_MAIN" -s -r --iterations 1 "$WORLD" \
     2>&1 | tail -5 ; } 2> "$OUTPUT_DIR/${LABEL}_wallclock.txt"
@@ -82,7 +87,7 @@ perf script -i "$OUTPUT_DIR/perf_${LABEL}_loading.data" 2>/dev/null \
 echo "[3/4] Generating SVG..."
 "$FLAMEGRAPH_DIR/flamegraph.pl" \
     --title "$LABEL (loading)" \
-    --subtitle "$(date '+%Y-%m-%d %H:%M') — startup + 1 iteration" \
+    --subtitle "$(date '+%Y-%m-%d %H:%M'), startup + 1 iteration" \
     "$OUTPUT_DIR/${LABEL}_loading.folded" \
     > "$OUTPUT_DIR/${LABEL}_loading.svg"
 
@@ -96,6 +101,8 @@ echo ""
 
 # Print top-20 self-time leaves
 echo "[4/4] Top 20 self-time leaves (loading):"
-awk '{ n=split($1,a,";"); printf "%s\t%d\n", a[n], $NF }' "$OUTPUT_DIR/${LABEL}_loading.folded" \
+# (C++ symbols contain spaces, so strip the trailing count and split on ";".
+#  "|| true" keeps a SIGPIPE from head aborting the script under pipefail.)
+awk '{ cnt=$NF; sub(/ [0-9]+$/, ""); n=split($0,a,";"); printf "%s\t%d\n", a[n], cnt }' "$OUTPUT_DIR/${LABEL}_loading.folded" \
     | awk -F'\t' '{s[$1]+=$2} END {for(k in s) printf "%12d  %s\n",s[k],k}' \
-    | sort -rn | head -20
+    | sort -rn | head -20 || true

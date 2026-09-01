@@ -33,7 +33,10 @@ worlds/                     # Benchmark world SDFs (all RTF=0)
   gpu_lidar_sensor.topics   # Sensor topics for subscriber
   sensors_demo.sdf          # 6 rendering sensors
   sensors_demo.topics       # Sensor topics for subscriber
-2026-04-21/                 # Benchmark run results
+  moving_robots_and_sensors.sdf       # gz-sim PR #3846 benchmark world (driven robots + sensors)
+  moving_robots_and_sensors.topics    # Sensor topics for subscriber
+  moving_robots_and_sensors.setup.sh  # Publishes cmd_vel / joint trajectory after load
+2026-04-21/, 2026-07-03/, 2026-09-01/   # Benchmark run results, one directory per run
   runtime/*.svg, *.folded   # Interactive runtime flamegraphs + stacks
   loading/*.svg, *.folded   # Interactive loading flamegraphs + stacks
   cache/*.svg, *.folded     # Cache-miss flamegraphs
@@ -141,6 +144,31 @@ For worlds with rendering sensors, the sensor pipeline skips work unless there's
 
 1. **Companion `.topics` file**: create `<world>.topics` alongside the SDF with one topic per line. `capture_all.sh` reads this automatically.
 2. **Command-line topics**: pass topics as extra arguments to `gz_flamegraph.sh`.
+
+List the topics the sensors actually publish (for example an RGBD camera publishes
+`<topic>/image`, `<topic>/depth_image` and `<topic>/points`, not `<topic>`); run the
+world once and check `gz topic -l`. A subscriber on a topic that does not exist
+leaves that sensor idle.
+
+### Worlds That Need Commands
+
+Some worlds only do interesting work once something drives them (velocity
+commands, joint trajectories). Put an executable `<world>.setup.sh` next to the
+SDF; `gz_flamegraph.sh` runs it after the startup wait and after the subscribers
+are up, before recording. See `worlds/moving_robots_and_sensors.setup.sh`, which
+mirrors what gz-sim's `BENCHMARK_server_run` publishes for that world.
+
+### Real Time Factor Without perf
+
+`SKIP_PERF=1` makes `gz_flamegraph.sh` run the world for the duration without
+attaching `perf` and only write `<label>_stats.txt`, a snapshot of
+`/world/<name>/stats` (sim time, real time, iterations). Every runtime capture
+writes the same snapshot after recording, but the unprofiled one is the number
+to quote for RTF:
+
+```bash
+SKIP_PERF=1 OUTPUT_DIR=captures/rtf ./scripts/gz_flamegraph.sh worlds/jetty.sdf jetty 30 headless
+```
 
 ### Custom Worlds
 
@@ -344,6 +372,7 @@ Options:
 | Variable | Default | Description |
 |---|---|---|
 | `GZ_SIM_MAIN` | auto-detect from PATH | Path to `gz-sim-main` binary |
+| `SKIP_PERF` | `0` | `1`: run the world without perf and only write the stats snapshot |
 | `FLAMEGRAPH_DIR` | `./FlameGraph` | Path to Brendan Gregg's FlameGraph scripts |
 | `OUTPUT_DIR` | `./captures/runtime` or `./captures/loading` | Where to write output files |
 | `SCHED_THRESHOLD_MS` | `1.0` | Scheduler delay threshold for flagging threads (ms) |
@@ -373,8 +402,9 @@ FLAMEGRAPH_DIR=~/FlameGraph OUTPUT_DIR=captures_gui/threads \
 
 Notes:
 
-- Uses `perf record -e task-clock` (not the default `cycles`) so hybrid P/E cores
-  are sampled uniformly; with `cycles`, `perf script` silently emits only one PMU.
+- All capture scripts (server and GUI) use `perf record -e task-clock` (not the
+  default `cycles`) so hybrid P/E cores are sampled uniformly; the weights in the
+  `.folded` files are therefore nanoseconds of CPU time, not sample counts.
 - To render on NVIDIA via PRIME offload, export
   `__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia` before capturing.
 - The GUI spawns behind an `sh` launcher wrapper; the script selects the real GUI

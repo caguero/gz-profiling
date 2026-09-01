@@ -1,0 +1,5 @@
+# Per-thread analysis: 3k_shapes_static
+# Source: captures/runtime/perf_3k_shapes_static.data
+# Total samples: 29985957064
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz-sim-main/927855	29985957064	100.0	dart::dynamics::DegreeOfFreedom::getPosition	9.3

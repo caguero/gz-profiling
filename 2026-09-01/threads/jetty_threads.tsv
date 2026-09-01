@@ -1,0 +1,6 @@
+# Per-thread analysis: jetty
+# Source: captures/runtime/perf_jetty.data
+# Total samples: 29897692272
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz-sim-main/928987	29896689263	99.9	dxHashSpace::collide	43.0
+gz-sim-main/929020	1003009	0	[unknown]	100.0

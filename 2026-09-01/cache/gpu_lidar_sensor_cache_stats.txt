@@ -1,0 +1,18 @@
+============================================
+  Cache Stats: PID 940432 (10s sample)
+============================================
+
+
+ Performance counter stats for process id '940432':
+
+       337,664,342      cpu_core/cache-references/                                              (86.48%)
+        31,180,199      cpu_core/cache-misses/           #    9.23% of all cache refs           (86.47%)
+    47,719,902,170      cpu_core/L1-dcache-loads/                                               (86.47%)
+       128,868,278      cpu_core/L1-dcache-load-misses/  #    0.27% of all L1-dcache accesses   (86.47%)
+        21,782,527      cpu_core/LLC-loads/                                                     (86.47%)
+         1,429,158      cpu_core/LLC-load-misses/        #    6.56% of all LL-cache accesses    (86.47%)
+   158,447,396,050      cpu_core/instructions/           #    2.59  insn per cycle              (86.46%)
+    61,118,962,482      cpu_core/cycles/                                                        (86.46%)
+
+      10.006816358 seconds time elapsed
+

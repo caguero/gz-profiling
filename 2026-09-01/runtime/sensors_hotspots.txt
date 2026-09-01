@@ -1,0 +1,85 @@
+============================================
+  Gazebo Hotspot Analysis: sensors
+============================================
+  Total samples: 29947842722
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1. Optimization targets (inclusive time)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Gazebo functions ranked by total CPU spent under them
+  (including all children). If you optimize or remove one
+  of these functions, you'd save up to this % of CPU.
+  These are the primary optimization candidates.
+
+  99.3%  gz::sim::v11::SimulationRunner::Run
+  99.3%  gz::sim::v11::ServerPrivate::Run
+  99.0%  gz::sim::v11::SimulationRunner::Step
+  97.1%  gz::sim::v11::SimulationRunner::UpdateSystems
+  92.9%  gz::sim::v11::systems::Physics::Update
+  72.2%  gz::sim::v11::systems::PhysicsPrivate::Step
+  13.2%  gz::sim::v11::systems::PhysicsPrivate::UpdateSim
+   4.5%  gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics
+   3.0%  gz::transport::v16::Node::Publisher::HasConnections
+   1.3%  Each<...>
+   1.2%  gz::sim::v11::systems::SceneBroadcaster::PostUpdate
+   1.2%  gz::sim::v11::systems::PhysicsPrivate::CreatePhysicsEntities
+   1.0%  gz::transport::v16::Node::Publisher::Valid
+   1.0%  gz::sim::v11::SimulationRunner::PublishStats
+   1.0%  gz::transport::v16::Publisher::Topic[abi:cxx11]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  2. What Gazebo functions call (attribution)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  For each sample, finds the nearest Gazebo function in the
+  stack and shows what external function it called. Format:
+  GazeboFunc -> ExternalFunc. Shows where optimizing the
+  Gazebo caller would reduce external library cost.
+
+  70.3%  gz::sim::v11::systems::PhysicsPrivate::Step -> gz::physics::ForwardStep::World<...>
+  11.2%  gz::sim::v11::systems::PhysicsPrivate::UpdateSim -> void
+   2.5%  gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics -> void
+   1.2%  gz::sim::v11::systems::Physics::Update -> gz::physics::SpecifyData<...>
+   0.9%  gz::transport::v16::Publisher::Topic[abi:cxx11] -> std::__cxx11::basic_string<...>
+   0.8%  gz::sim::v11::systems::PhysicsPrivate::Step -> gz::physics::ExpectData<...>
+   0.7%  gz::sim::v11::systems::PhysicsPrivate::Step -> gz::physics::SpecifyData<...>
+   0.5%  gz::transport::v16::Node::PublisherPrivate::Valid -> std::__cxx11::basic_string<...>
+   0.4%  gz::transport::v16::HandlerStorage<...>
+   0.4%  gz::transport::v16::Node::Publisher::HasConnections -> lll_mutex_unlock_optimized
+   0.4%  gz::sim::v11::systems::Physics::Update -> std::_Rb_tree<...>
+   0.3%  gz::sim::v11::systems::PhysicsPrivate::UpdateSim -> gz::physics::EntityPtr<...>
+   0.3%  gz::transport::v16::MessagePublisher::MsgTypeName[abi:cxx11] -> std::__cxx11::basic_string<...>
+   0.2%  gz::transport::v16::Node::Publisher::HasConnections -> std::__cxx11::basic_string<...>
+   0.2%  gz::transport::v16::Node::Publisher::HasConnections -> lll_mutex_lock_optimized
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  3. External costs (context)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Top CPU consumers in external libraries (DART, ODE, Ogre,
+  glibc, etc.). Not directly actionable, but shows where
+  the CPU actually executes. See section 2 for which Gazebo
+  function is responsible for each.
+
+  70.3%  gz::physics::ForwardStep::World<gz::physics::FeaturePolicy<double,
+   0.2%  [[vdso]]
+   0.1%  [libdart.so.6.13.2]
+   0.1%  ___pthread_mutex_lock
+   0.1%  dart::dynamics::Frame::getWorldTransform
+   0.0%  dart::dynamics::Frame::World
+   0.0%  _int_free
+   0.0%  __GI___pthread_mutex_unlock_usercnt
+   0.0%  pthread_mutex_unlock@plt
+   0.0%  dart::dynamics::BodyNode::clearConstraintImpulse
+   0.0%  pthread_mutex_lock@plt
+   0.0%  dart::math::verifyTransform
+   0.0%  dart::dynamics::Skeleton::clearConstraintImpulses
+   0.0%  dart::dynamics::Joint::getRelativeTransform
+   0.0%  dart::dynamics::BodyNode::updateVelocityChangeFD
+
+============================================
+  Summary
+============================================
+  How much CPU runs under a Gazebo function in the call stack?
+  This is the portion we can influence by changing Gazebo code.
+
+  Under Gazebo code:  99.4%  (optimization opportunity)
+  Outside Gazebo:      0.6%  (external threads, drivers, kernel)

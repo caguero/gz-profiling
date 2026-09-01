@@ -1,0 +1,5 @@
+# Per-thread analysis: sensors
+# Source: captures/runtime/perf_sensors.data
+# Total samples: 29947842722
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz-sim-main/931438	29947842722	100.0	[libdart.so.6.13.2]	18.8

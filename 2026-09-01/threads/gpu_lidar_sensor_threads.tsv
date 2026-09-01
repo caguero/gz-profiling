@@ -1,0 +1,11 @@
+# Per-thread analysis: gpu_lidar_sensor
+# Source: captures/runtime/perf_gpu_lidar_sensor.data
+# Total samples: 38094281820
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz-sim-main/928393	27810430543	73.0	[libdart.so.6.13.2]	18.7
+gz-sim-main/928426	9915746974	26.0	[libnvidia-eglcore.so.580.159.03]	34.2
+tx-0/928472	263791367	.6	[unknown]	73.8
+gz-sim-main/928428	91273819	.2	[unknown]	52.7
+app-1/928497	5015045	0	[unknown]	100.0
+Watchdog_Valida/928488	4012036	0	zenoh_shm::watchdog::validator::WatchdogValidator::new::{{closure}}	75.0
+Watchdog_Confir/928487	4012036	0	std::sync::mpmc::waker::SyncWaker::unregister.8381	25.0

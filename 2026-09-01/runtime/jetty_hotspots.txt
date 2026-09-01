@@ -1,0 +1,85 @@
+============================================
+  Gazebo Hotspot Analysis: jetty
+============================================
+  Total samples: 29897692272
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1. Optimization targets (inclusive time)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Gazebo functions ranked by total CPU spent under them
+  (including all children). If you optimize or remove one
+  of these functions, you'd save up to this % of CPU.
+  These are the primary optimization candidates.
+
+  99.8%  gz::sim::v11::SimulationRunner::Run
+  99.8%  gz::sim::v11::ServerPrivate::Run
+  99.7%  gz::sim::v11::SimulationRunner::Step
+  99.7%  gz::sim::v11::SimulationRunner::UpdateSystems
+  97.8%  gz::sim::v11::systems::Physics::Update
+  96.8%  gz::sim::v11::systems::PhysicsPrivate::Step
+   0.8%  gz::sim::v11::systems::Sensors::PostUpdate
+   0.8%  Each<...>
+   0.7%  gz::sim::v11::RenderUtil::UpdateFromECM
+   0.6%  gz::sim::v11::RenderUtilPrivate::UpdateRenderingEntities
+   0.5%  gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics
+   0.4%  gz::sim::v11::systems::JointPositionController::PreUpdate
+   0.3%  gz::transport::parameters::v16::ParametersRegistry::Parameter
+   0.3%  gz::sim::v11::systems::PhysicsPrivate::UpdateSim
+   0.3%  ParameterProxy<gz::math::v10::PID>::Update
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  2. What Gazebo functions call (attribution)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  For each sample, finds the nearest Gazebo function in the
+  stack and shows what external function it called. Format:
+  GazeboFunc -> ExternalFunc. Shows where optimizing the
+  Gazebo caller would reduce external library cost.
+
+  96.7%  gz::sim::v11::systems::PhysicsPrivate::Step -> gz::physics::ForwardStep::World<...>
+   0.3%  gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics -> void
+   0.1%  gz::transport::parameters::v16::ParametersRegistry::Parameter -> std::unordered_map<...>
+   0.1%  gz::physics::dartsim::BitmaskContactFilter::ignoresCollision -> dart::collision::BodyNodeCollisionFilter::ignoresCollision
+   0.1%  gz::sim::v11::systems::PhysicsPrivate::Step -> gz::physics::SpecifyData<...>
+   0.1%  gz::sim::v11::systems::PhysicsPrivate::UpdateSim -> bool
+   0.1%  gz::sim::v11::systems::Physics::Update -> gz::physics::SpecifyData<...>
+   0.1%  gz::sim::v11::systems::LookupWheelSlipPrivate::UpdateParams -> std::unordered_map<...>
+   0.1%  gz::sim::v11::systems::LookupWheelSlipPrivate::ScopedParamName[abi:cxx11] -> std::__cxx11::basic_string<...>
+   0.1%  gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics -> gz::physics::SetShapeFrictionPyramidSlipCompliance::Shape<...>
+   0.1%  gz::transport::parameters::v16::ParametersRegistry::Parameter -> [libprotobuf.so.32.0.12]
+   0.0%  gz::sim::v11::systems::JointPositionController::PreUpdate -> bool
+   0.0%  gz::sim::v11::SimulationRunner::UpdateSystems -> non-virtual
+   0.0%  gz::sim::v11::systems::WheelSlipPrivate::UpdateParams -> std::unordered_map<...>
+   0.0%  gz::transport::v16::HandlerStorage<...>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  3. External costs (context)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Top CPU consumers in external libraries (DART, ODE, Ogre,
+  glibc, etc.). Not directly actionable, but shows where
+  the CPU actually executes. See section 2 for which Gazebo
+  function is responsible for each.
+
+  96.7%  gz::physics::ForwardStep::World<gz::physics::FeaturePolicy<double,
+   0.1%  dart::collision::BodyNodeCollisionFilter::ignoresCollision
+   0.0%  ___pthread_mutex_lock
+   0.0%  ___pthread_mutex_unlock
+   0.0%  [libdart.so.6.13.2]
+   0.0%  dart::dynamics::Skeleton::clearConstraintImpulses
+   0.0%  dart::dynamics::BodyNode::clearConstraintImpulse
+   0.0%  [[vdso]]
+   0.0%  std::__detail::_Map_base<dart::collision::CollisionObject*,
+   0.0%  pthread_mutex_unlock@plt
+   0.0%  _int_free
+   0.0%  __GI___pthread_mutex_unlock_usercnt
+   0.0%  dart::dynamics::Joint::isKinematic
+   0.0%  dart::dynamics::Joint::getSkeleton
+   0.0%  dart::dynamics::Joint::getRelativeTransform
+
+============================================
+  Summary
+============================================
+  How much CPU runs under a Gazebo function in the call stack?
+  This is the portion we can influence by changing Gazebo code.
+
+  Under Gazebo code:  99.9%  (optimization opportunity)
+  Outside Gazebo:      0.1%  (external threads, drivers, kernel)

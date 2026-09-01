@@ -1,0 +1,19 @@
+# Unified profiling summary: 3k_shapes_static
+# Date: 2026-09-01 22:39
+# Dimensions available: cpu
+# Scoring: cpu(0-40) + cache(0-20) + offcpu(0-15) + c2c(0-15) + sched(0-10) = 0-100
+rank	function_name	score	cpu_pct	cache_ratio	offcpu_us	hitm_pct	sched_flag	evidence_sources
+1	gz::sim::v11::systems::Physics::Update	40	99.7	-	-	-	cpu
+2	gz::sim::v11::systems::PhysicsPrivate::Step	40	97.6	-	-	-	cpu
+3	gz::sim::v11::SimulationRunner::UpdateSystems	40	99.7	-	-	-	cpu
+4	gz::sim::v11::SimulationRunner::Step	40	99.8	-	-	-	cpu
+5	gz::sim::v11::SimulationRunner::Run	40	99.9	-	-	-	cpu
+6	gz::sim::v11::ServerPrivate::Run	40	99.9	-	-	-	cpu
+7	gz::physics::ForwardStep::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList>::Step	40	93.8	-	-	-	cpu
+8	gz::physics::dartsim::SimulationFeatures::WorldForwardStep	40	86.7	-	-	-	cpu
+9	gz::physics::dartsim::SimulationFeatures::Write	25	7.1	-	-	-	cpu
+10	gz::physics::dartsim::BitmaskContactFilter::ignoresCollision	25	9.4	-	-	-	cpu
+11	void gz::sim::v11::EntityComponentManager::Each<gz::sim::v11::components::Component<gz::math::v10::Vector3<double>, gz::sim::v11::components::GravityTag, gz::sim::v11::serializers::DefaultSerializer<gz::math::v10::Vector3<double> > >, gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics	10	1.6	-	-	-	cpu
+12	gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics	10	1.7	-	-	-	cpu
+13	gz::math::eigen3::convert	10	1.3	-	-	-	cpu
+14	Each<gz::sim::v11::components::Component<gz::math::v10::Vector3<double>, gz::sim::v11::components::GravityTag, gz::sim::v11::serializers::DefaultSerializer<gz::math::v10::Vector3<double> > >, gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics	10	1.7	-	-	-	cpu

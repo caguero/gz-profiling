@@ -1,0 +1,85 @@
+============================================
+  Gazebo Hotspot Analysis: moving_robots_and_sensors
+============================================
+  Total samples: 44558674825
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1. Optimization targets (inclusive time)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Gazebo functions ranked by total CPU spent under them
+  (including all children). If you optimize or remove one
+  of these functions, you'd save up to this % of CPU.
+  These are the primary optimization candidates.
+
+  63.8%  gz::sim::v11::SimulationRunner::Run
+  63.8%  gz::sim::v11::ServerPrivate::Run
+  63.7%  gz::sim::v11::SimulationRunner::Step
+  63.5%  gz::sim::v11::SimulationRunner::UpdateSystems
+  59.7%  gz::sim::v11::systems::Physics::Update
+  49.3%  gz::sim::v11::systems::PhysicsPrivate::Step
+  34.1%  gz::sim::v11::systems::SensorsPrivate::RunOnce
+  34.1%  gz::sim::v11::systems::SensorsPrivate::RenderThread
+  33.6%  gz::sensors::v11::Sensor::Update
+  33.1%  gz::sensors::v11::Manager::RunOnce
+  27.5%  gz::sensors::v11::RenderingSensor::Render
+  14.3%  gz::sensors::v11::RgbdCameraSensor::Update
+  10.3%  gz::sensors::v11::CameraSensor::Update
+   8.1%  gz::sim::v11::systems::PhysicsPrivate::UpdateSim
+   8.1%  gz::rendering::v11::Ogre2RenderTarget::Render
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  2. What Gazebo functions call (attribution)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  For each sample, finds the nearest Gazebo function in the
+  stack and shows what external function it called. Format:
+  GazeboFunc -> ExternalFunc. Shows where optimizing the
+  Gazebo caller would reduce external library cost.
+
+  49.1%  gz::sim::v11::systems::PhysicsPrivate::Step -> gz::physics::ForwardStep::World<...>
+   4.3%  gz::sim::v11::systems::PhysicsPrivate::UpdateCollisions -> gz::physics::GetContactsFromLastStepFeature::World<...>
+   2.8%  gz::rendering::v11::Ogre2GpuReadbackTicket::DownloadAndMap -> [[vdso]]
+   2.4%  gz::rendering::v11::Ogre2GpuReadbackTicket::DownloadAndMap -> [libnvidia-eglcore.so.580.159.03]
+   2.4%  gz::rendering::v11::Ogre2RenderTarget::Render -> Ogre::Node::updateFromParentImpl
+   1.4%  gz::rendering::v11::Ogre2ThermalCamera::PostRender -> [[vdso]]
+   1.3%  gz::rendering::v11::Ogre2DepthCamera::Render -> Ogre::Node::updateFromParentImpl
+   1.2%  gz::rendering::v11::Ogre2ThermalCamera::PostRender -> [libnvidia-eglcore.so.580.159.03]
+   1.2%  gz::rendering::v11::Ogre2ThermalCamera::Render -> Ogre::Node::updateFromParentImpl
+   1.0%  gz::rendering::v11::Ogre2RenderTarget::Render -> Ogre::ForwardClustered::collectLightForSlice
+   1.0%  gz::transport::v16::Node::Publisher::Publish -> __memcpy_avx_unaligned_erms
+   0.9%  gz::sim::v11::systems::PhysicsPrivate::UpdateCollisions -> std::unordered_map<...>
+   0.9%  gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics -> void
+   0.9%  gz::rendering::v11::Ogre2RenderTarget::Render -> [libnvidia-eglcore.so.580.159.03]
+   0.8%  gz::rendering::v11::Ogre2RenderTarget::Copy -> [libnvidia-eglcore.so.580.159.03]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  3. External costs (context)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Top CPU consumers in external libraries (DART, ODE, Ogre,
+  glibc, etc.). Not directly actionable, but shows where
+  the CPU actually executes. See section 2 for which Gazebo
+  function is responsible for each.
+
+  49.1%  gz::physics::ForwardStep::World<gz::physics::FeaturePolicy<double,
+   6.8%  [libnvidia-eglcore.so.580.159.03]
+   4.9%  Ogre::Node::updateFromParentImpl
+   4.9%  [[vdso]]
+   2.2%  Ogre::ForwardClustered::collectLightForSlice
+   1.8%  __memcpy_avx_unaligned_erms
+   1.5%  Ogre::Frustum::updateFrustumPlanesImpl
+   1.0%  Ogre::Camera::isViewOutOfDate
+   0.8%  Ogre::Frustum::updateWorldSpaceCornersImpl
+   0.5%  Ogre::RenderSystem::_makeRsProjectionMatrix
+   0.3%  Ogre::Matrix4::inverseAffine
+   0.3%  Ogre::Node::convertLocalToWorldPosition
+   0.2%  [unknown]
+   0.2%  Ogre::Frustum::updateFrustumImpl
+   0.2%  Ogre::Frustum::calcProjectionParameters
+
+============================================
+  Summary
+============================================
+  How much CPU runs under a Gazebo function in the call stack?
+  This is the portion we can influence by changing Gazebo code.
+
+  Under Gazebo code:  98.1%  (optimization opportunity)
+  Outside Gazebo:      1.9%  (external threads, drivers, kernel)

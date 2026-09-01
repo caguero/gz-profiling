@@ -1,0 +1,959 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="1006" onload="init(evt)" viewBox="0 0 1200 1006" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="1006.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >moving_robots_and_sensors thread: tx-0-?/929923 (1.2%)</text>
+<text id="subtitle" x="600.00" y="48" >573721148 samples</text>
+<text id="details" x="10.00" y="989" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="989" > </text>
+<g id="frames">
+<g >
+<title>__GI___clock_gettime (2,006,018 samples, 0.35%)</title><rect x="422.6" y="749" width="4.1" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="425.59" y="759.5" ></text>
+</g>
+<g >
+<title>tokio::runtime::driver::Driver::park_timeout (1,003,009 samples, 0.17%)</title><rect x="59.5" y="813" width="2.1" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="62.51" y="823.5" ></text>
+</g>
+<g >
+<title>[unknown] (341,023,060 samples, 59.44%)</title><rect x="474.2" y="637" width="701.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="477.16" y="647.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (136,409,224 samples, 23.78%)</title><rect x="895.0" y="253" width="280.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="898.00" y="263.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (203,610,827 samples, 35.49%)</title><rect x="756.8" y="461" width="418.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="759.78" y="471.5" >[unknown]</text>
+</g>
+<g >
+<title>__GI___clock_gettime (1,003,009 samples, 0.17%)</title><rect x="313.3" y="765" width="2.0" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="316.25" y="775.5" ></text>
+</g>
+<g >
+<title>__tls_get_addr (3,009,027 samples, 0.52%)</title><rect x="253.4" y="813" width="6.2" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="256.43" y="823.5" ></text>
+</g>
+<g >
+<title>__GI___libc_free (2,006,018 samples, 0.35%)</title><rect x="410.2" y="765" width="4.1" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="413.21" y="775.5" ></text>
+</g>
+<g >
+<title>std::sys::backtrace::__rust_begin_short_backtrace (573,721,148 samples, 100.00%)</title><rect x="10.0" y="877" width="1180.0" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="13.00" y="887.5" >std::sys::backtrace::__rust_begin_short_backtrace</text>
+</g>
+<g >
+<title>[unknown] (3,009,027 samples, 0.52%)</title><rect x="230.7" y="605" width="6.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="233.73" y="615.5" ></text>
+</g>
+<g >
+<title>tokio::runtime::time::entry::TimerEntry::reset (2,006,018 samples, 0.35%)</title><rect x="406.1" y="749" width="4.1" height="15.0" fill="rgb(240,165,39)" rx="2" ry="2" />
+<text  x="409.08" y="759.5" ></text>
+</g>
+<g >
+<title>[unknown] (36,108,324 samples, 6.29%)</title><rect x="162.7" y="685" width="74.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="165.66" y="695.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;zenoh_link_tcp::unicast::LinkUnicastTcp as zenoh_link_commons::unicast::LinkUnicastTrait&gt;::write_all (1,003,009 samples, 0.17%)</title><rect x="441.2" y="765" width="2.0" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="444.15" y="775.5" ></text>
+</g>
+<g >
+<title>[unknown] (242,728,178 samples, 42.31%)</title><rect x="676.3" y="509" width="499.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="679.33" y="519.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::&lt;impl tokio::runtime::scheduler::multi_thread::handle::Handle&gt;::schedule_task (1,003,009 samples, 0.17%)</title><rect x="69.8" y="797" width="2.1" height="15.0" fill="rgb(251,211,50)" rx="2" ry="2" />
+<text  x="72.83" y="807.5" ></text>
+</g>
+<g >
+<title>&lt;zenoh_link_tcp::unicast::LinkUnicastTcp as zenoh_link_commons::unicast::LinkUnicastTrait&gt;::write_all (1,003,009 samples, 0.17%)</title><rect x="1181.7" y="765" width="2.1" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="1184.75" y="775.5" ></text>
+</g>
+<g >
+<title>[unknown] (165,496,485 samples, 28.85%)</title><rect x="835.2" y="365" width="340.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="838.17" y="375.5" >[unknown]</text>
+</g>
+<g >
+<title>[[vdso]] (1,003,009 samples, 0.17%)</title><rect x="313.3" y="749" width="2.0" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="316.25" y="759.5" ></text>
+</g>
+<g >
+<title>core::ptr::drop_in_place&lt;event_listener::EventListener&gt; (1,003,009 samples, 0.17%)</title><rect x="414.3" y="765" width="2.1" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="417.34" y="775.5" ></text>
+</g>
+<g >
+<title>zenoh_transport::common::pipeline::TransmissionPipelineConsumer::pull::{{closure}} (50,150,450 samples, 8.74%)</title><rect x="333.9" y="781" width="103.1" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="336.88" y="791.5" >zenoh_transp..</text>
+</g>
+<g >
+<title>[unknown] (224,674,016 samples, 39.16%)</title><rect x="713.5" y="493" width="462.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="716.46" y="503.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (49,147,441 samples, 8.57%)</title><rect x="135.8" y="749" width="101.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="138.84" y="759.5" >[unknown]</text>
+</g>
+<g >
+<title>[[vdso]] (3,009,027 samples, 0.52%)</title><rect x="43.0" y="797" width="6.2" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="46.01" y="807.5" ></text>
+</g>
+<g >
+<title>std::sys::pal::unix::time::Timespec::now (4,012,036 samples, 0.70%)</title><rect x="40.9" y="829" width="8.3" height="15.0" fill="rgb(227,104,25)" rx="2" ry="2" />
+<text  x="43.94" y="839.5" ></text>
+</g>
+<g >
+<title>[unknown] (132,397,188 samples, 23.08%)</title><rect x="903.3" y="237" width="272.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="906.25" y="247.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::schedule (1,003,009 samples, 0.17%)</title><rect x="71.9" y="797" width="2.1" height="15.0" fill="rgb(225,95,22)" rx="2" ry="2" />
+<text  x="74.89" y="807.5" ></text>
+</g>
+<g >
+<title>[unknown] (144,433,296 samples, 25.17%)</title><rect x="878.5" y="285" width="297.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="881.50" y="295.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (183,550,647 samples, 31.99%)</title><rect x="798.0" y="429" width="377.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="801.04" y="439.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (107,321,963 samples, 18.71%)</title><rect x="954.8" y="157" width="220.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="957.83" y="167.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (344,032,087 samples, 59.97%)</title><rect x="468.0" y="701" width="707.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="470.97" y="711.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (150,451,350 samples, 26.22%)</title><rect x="866.1" y="317" width="309.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="869.12" y="327.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (315,947,835 samples, 55.07%)</title><rect x="525.7" y="573" width="649.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="528.73" y="583.5" >[unknown]</text>
+</g>
+<g >
+<title>std::sys::pal::unix::time::Timespec::now (2,006,018 samples, 0.35%)</title><rect x="422.6" y="765" width="4.1" height="15.0" fill="rgb(227,104,25)" rx="2" ry="2" />
+<text  x="425.59" y="775.5" ></text>
+</g>
+<g >
+<title>std::sys::thread::unix::Thread::new::thread_start (573,721,148 samples, 100.00%)</title><rect x="10.0" y="909" width="1180.0" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="13.00" y="919.5" >std::sys::thread::unix::Thread::new::thread_start</text>
+</g>
+<g >
+<title>tokio::runtime::time::entry::_::&lt;impl core::ops::drop::Drop for tokio::runtime::time::entry::TimerEntry&gt;::drop (3,009,027 samples, 0.52%)</title><rect x="321.5" y="781" width="6.2" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="324.50" y="791.5" ></text>
+</g>
+<g >
+<title>[unknown] (39,117,351 samples, 6.82%)</title><rect x="156.5" y="701" width="80.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="159.47" y="711.5" >[unknown]</text>
+</g>
+<g >
+<title>epoll_wait (63,189,567 samples, 11.01%)</title><rect x="117.3" y="781" width="129.9" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="120.27" y="791.5" >epoll_wait</text>
+</g>
+<g >
+<title>zenoh_transport::common::pipeline::TransmissionPipelineConsumer::refill (2,006,018 samples, 0.35%)</title><rect x="437.0" y="781" width="4.2" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="440.03" y="791.5" ></text>
+</g>
+<g >
+<title>std::sys::pal::unix::time::Timespec::now (1,003,009 samples, 0.17%)</title><rect x="313.3" y="781" width="2.0" height="15.0" fill="rgb(227,104,25)" rx="2" ry="2" />
+<text  x="316.25" y="791.5" ></text>
+</g>
+<g >
+<title>[unknown] (60,180,540 samples, 10.49%)</title><rect x="1051.8" y="77" width="123.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1054.78" y="87.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (75,225,675 samples, 13.11%)</title><rect x="1020.8" y="125" width="154.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1023.84" y="135.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (121,364,089 samples, 21.15%)</title><rect x="925.9" y="189" width="249.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="928.94" y="199.5" >[unknown]</text>
+</g>
+<g >
+<title>[[vdso]] (7,021,063 samples, 1.22%)</title><rect x="92.5" y="765" width="14.5" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="95.52" y="775.5" ></text>
+</g>
+<g >
+<title>core::ops::function::FnOnce::call_once{{vtable.shim}} (573,721,148 samples, 100.00%)</title><rect x="10.0" y="893" width="1180.0" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="13.00" y="903.5" >core::ops::function::FnOnce::call_once{{vtable.shim}}</text>
+</g>
+<g >
+<title>[unknown] (172,517,548 samples, 30.07%)</title><rect x="820.7" y="381" width="354.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="823.73" y="391.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::time::entry::TimerEntry::reset (5,015,045 samples, 0.87%)</title><rect x="302.9" y="765" width="10.4" height="15.0" fill="rgb(240,165,39)" rx="2" ry="2" />
+<text  x="305.94" y="775.5" ></text>
+</g>
+<g >
+<title>tokio::runtime::task::waker::clone_waker (1,003,009 samples, 0.17%)</title><rect x="300.9" y="765" width="2.0" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="303.87" y="775.5" ></text>
+</g>
+<g >
+<title>__floattidf (3,009,027 samples, 0.52%)</title><rect x="30.6" y="829" width="6.2" height="15.0" fill="rgb(254,225,53)" rx="2" ry="2" />
+<text  x="33.63" y="839.5" ></text>
+</g>
+<g >
+<title>tokio::runtime::time::wheel::Wheel::next_expiration (1,003,009 samples, 0.17%)</title><rect x="247.2" y="797" width="2.1" height="15.0" fill="rgb(214,41,10)" rx="2" ry="2" />
+<text  x="250.24" y="807.5" ></text>
+</g>
+<g >
+<title>[unknown] (115,346,035 samples, 20.10%)</title><rect x="938.3" y="173" width="237.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="941.32" y="183.5" >[unknown]</text>
+</g>
+<g >
+<title>clone3 (573,721,148 samples, 100.00%)</title><rect x="10.0" y="941" width="1180.0" height="15.0" fill="rgb(216,54,12)" rx="2" ry="2" />
+<text  x="13.00" y="951.5" >clone3</text>
+</g>
+<g >
+<title>arena_for_chunk (1,003,009 samples, 0.17%)</title><rect x="412.3" y="733" width="2.0" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="415.27" y="743.5" ></text>
+</g>
+<g >
+<title>__GI___clock_gettime (3,009,027 samples, 0.52%)</title><rect x="43.0" y="813" width="6.2" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="46.01" y="823.5" ></text>
+</g>
+<g >
+<title>[unknown] (329,989,961 samples, 57.52%)</title><rect x="496.9" y="605" width="678.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="499.85" y="615.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (309,929,781 samples, 54.02%)</title><rect x="538.1" y="557" width="637.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="541.11" y="567.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (344,032,087 samples, 59.97%)</title><rect x="468.0" y="685" width="707.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="470.97" y="695.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (62,186,558 samples, 10.84%)</title><rect x="1047.7" y="93" width="127.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1050.66" y="103.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (10,030,090 samples, 1.75%)</title><rect x="216.3" y="637" width="20.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="219.29" y="647.5" ></text>
+</g>
+<g >
+<title>&lt;zenoh_link_tcp::unicast::LinkUnicastTcp as zenoh_link_commons::unicast::LinkUnicastTrait&gt;::write_all::{{closure}} (359,077,222 samples, 62.59%)</title><rect x="443.2" y="765" width="738.5" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="446.22" y="775.5" >&lt;zenoh_link_tcp::unicast::LinkUnicastTcp as zenoh_link_commons::unicast::LinkUnicastTrait&gt;::write_all:..</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::idle::Idle::worker_to_notify (1,003,009 samples, 0.17%)</title><rect x="259.6" y="813" width="2.1" height="15.0" fill="rgb(216,54,13)" rx="2" ry="2" />
+<text  x="262.62" y="823.5" ></text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::run_task (457,372,104 samples, 79.72%)</title><rect x="249.3" y="829" width="940.7" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="252.30" y="839.5" >tokio::runtime::scheduler::multi_thread::worker::Context::run_task</text>
+</g>
+<g >
+<title>__GI___pthread_disable_asynccancel (5,015,045 samples, 0.87%)</title><rect x="236.9" y="765" width="10.3" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="239.92" y="775.5" ></text>
+</g>
+<g >
+<title>tcache_get_n (1,003,009 samples, 0.17%)</title><rect x="1181.7" y="717" width="2.1" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="1184.75" y="727.5" ></text>
+</g>
+<g >
+<title>__libc_send (347,041,114 samples, 60.49%)</title><rect x="463.8" y="717" width="713.8" height="15.0" fill="rgb(222,78,18)" rx="2" ry="2" />
+<text  x="466.85" y="727.5" >__libc_send</text>
+</g>
+<g >
+<title>__pow (2,006,018 samples, 0.35%)</title><rect x="36.8" y="829" width="4.1" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="39.82" y="839.5" ></text>
+</g>
+<g >
+<title>[unknown] (49,147,441 samples, 8.57%)</title><rect x="135.8" y="765" width="101.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="138.84" y="775.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (44,132,396 samples, 7.69%)</title><rect x="146.2" y="717" width="90.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="149.15" y="727.5" >[unknown]</text>
+</g>
+<g >
+<title>__GI___libc_malloc (2,006,018 samples, 0.35%)</title><rect x="418.5" y="749" width="4.1" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="421.46" y="759.5" ></text>
+</g>
+<g >
+<title>&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll (446,339,005 samples, 77.80%)</title><rect x="272.0" y="797" width="918.0" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="274.99" y="807.5" >&lt;tokio_util::task::task_tracker::TrackedFuture&lt;F&gt; as core::future::future::Future&gt;::poll</text>
+</g>
+<g >
+<title>[unknown] (9,027,081 samples, 1.57%)</title><rect x="1157.0" y="61" width="18.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1159.99" y="71.5" ></text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::Context::park_internal (97,291,873 samples, 16.96%)</title><rect x="49.2" y="829" width="200.1" height="15.0" fill="rgb(208,15,3)" rx="2" ry="2" />
+<text  x="52.20" y="839.5" >tokio::runtime::scheduler:..</text>
+</g>
+<g >
+<title>[unknown] (177,532,593 samples, 30.94%)</title><rect x="810.4" y="397" width="365.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="813.42" y="407.5" >[unknown]</text>
+</g>
+<g >
+<title>event_listener::sys::&lt;impl event_listener::Inner&lt;T&gt;&gt;::with_inner (1,003,009 samples, 0.17%)</title><rect x="439.1" y="765" width="2.1" height="15.0" fill="rgb(245,188,45)" rx="2" ry="2" />
+<text  x="442.09" y="775.5" ></text>
+</g>
+<g >
+<title>[unknown] (197,592,773 samples, 34.44%)</title><rect x="769.2" y="445" width="406.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="772.16" y="455.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (342,026,069 samples, 59.62%)</title><rect x="472.1" y="669" width="703.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.10" y="679.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (8,024,072 samples, 1.40%)</title><rect x="220.4" y="621" width="16.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="223.42" y="631.5" ></text>
+</g>
+<g >
+<title>[[vdso]] (2,006,018 samples, 0.35%)</title><rect x="422.6" y="733" width="4.1" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="425.59" y="743.5" ></text>
+</g>
+<g >
+<title>[unknown] (139,418,251 samples, 24.30%)</title><rect x="888.8" y="269" width="286.8" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="891.81" y="279.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::time::wheel::Wheel::remove (1,003,009 samples, 0.17%)</title><rect x="325.6" y="765" width="2.1" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="328.63" y="775.5" ></text>
+</g>
+<g >
+<title>[unknown] (181,544,629 samples, 31.64%)</title><rect x="802.2" y="413" width="373.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="805.17" y="423.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (148,445,332 samples, 25.87%)</title><rect x="870.2" y="301" width="305.4" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="873.24" y="311.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::multi_thread::worker::run (573,721,148 samples, 100.00%)</title><rect x="10.0" y="845" width="1180.0" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="13.00" y="855.5" >tokio::runtime::scheduler::multi_thread::worker::run</text>
+</g>
+<g >
+<title>std::sys::pal::unix::time::Timespec::sub_timespec (1,003,009 samples, 0.17%)</title><rect x="311.2" y="749" width="2.1" height="15.0" fill="rgb(236,142,34)" rx="2" ry="2" />
+<text  x="314.19" y="759.5" ></text>
+</g>
+<g >
+<title>&lt;tokio::time::sleep::Sleep as core::future::future::Future&gt;::poll (9,027,081 samples, 1.57%)</title><rect x="294.7" y="781" width="18.6" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="297.69" y="791.5" ></text>
+</g>
+<g >
+<title>tokio::runtime::io::registration::Registration::poll_ready (2,006,018 samples, 0.35%)</title><rect x="1177.6" y="733" width="4.1" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1180.62" y="743.5" ></text>
+</g>
+<g >
+<title>[unknown] (342,026,069 samples, 59.62%)</title><rect x="472.1" y="653" width="703.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="475.10" y="663.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;event_listener::EventListener&lt;T&gt; as core::future::future::Future&gt;::poll (7,021,063 samples, 1.22%)</title><rect x="389.6" y="765" width="14.4" height="15.0" fill="rgb(219,66,15)" rx="2" ry="2" />
+<text  x="392.58" y="775.5" ></text>
+</g>
+<g >
+<title>__GI___clock_gettime (9,027,081 samples, 1.57%)</title><rect x="88.4" y="781" width="18.6" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="91.39" y="791.5" ></text>
+</g>
+<g >
+<title>[unknown] (46,138,414 samples, 8.04%)</title><rect x="142.0" y="733" width="94.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="145.03" y="743.5" >[unknown]</text>
+</g>
+<g >
+<title>__tls_get_addr@plt (1,003,009 samples, 0.17%)</title><rect x="298.8" y="765" width="2.1" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="301.81" y="775.5" ></text>
+</g>
+<g >
+<title>&lt;tokio::time::sleep::Sleep as core::future::future::Future&gt;::poll (3,009,027 samples, 0.52%)</title><rect x="404.0" y="765" width="6.2" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="407.02" y="775.5" ></text>
+</g>
+<g >
+<title>arena_for_chunk (1,003,009 samples, 0.17%)</title><rect x="412.3" y="749" width="2.0" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="415.27" y="759.5" ></text>
+</g>
+<g >
+<title>[unknown] (293,881,637 samples, 51.22%)</title><rect x="571.1" y="541" width="604.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="574.12" y="551.5" >[unknown]</text>
+</g>
+<g >
+<title>tcache_get (1,003,009 samples, 0.17%)</title><rect x="1181.7" y="733" width="2.1" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="1184.75" y="743.5" ></text>
+</g>
+<g >
+<title>std::sys::pal::unix::time::Timespec::now (11,033,099 samples, 1.92%)</title><rect x="84.3" y="797" width="22.7" height="15.0" fill="rgb(227,104,25)" rx="2" ry="2" />
+<text  x="87.27" y="807.5" >s..</text>
+</g>
+<g >
+<title>tokio::runtime::time::&lt;impl tokio::runtime::time::handle::Handle&gt;::process_at_time (2,006,018 samples, 0.35%)</title><rect x="74.0" y="813" width="4.1" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="76.95" y="823.5" ></text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (451,354,050 samples, 78.67%)</title><rect x="261.7" y="813" width="928.3" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="264.68" y="823.5" >tokio::runtime::task::raw::poll</text>
+</g>
+<g >
+<title>__pow_finite@GLIBC_2.15@plt (1,003,009 samples, 0.17%)</title><rect x="38.9" y="813" width="2.0" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="41.88" y="823.5" ></text>
+</g>
+<g >
+<title>[unknown] (126,379,134 samples, 22.03%)</title><rect x="915.6" y="205" width="260.0" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="918.63" y="215.5" >[unknown]</text>
+</g>
+<g >
+<title>&lt;tokio::net::tcp::stream::TcpStream as tokio::io::async_write::AsyncWrite&gt;::poll_write (358,074,213 samples, 62.41%)</title><rect x="445.3" y="749" width="736.4" height="15.0" fill="rgb(241,165,39)" rx="2" ry="2" />
+<text  x="448.28" y="759.5" >&lt;tokio::net::tcp::stream::TcpStream as tokio::io::async_write::AsyncWrite&gt;::poll_write</text>
+</g>
+<g >
+<title>tokio::runtime::time::Driver::park_internal (83,249,747 samples, 14.51%)</title><rect x="78.1" y="813" width="171.2" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="81.08" y="823.5" >tokio::runtime::time::..</text>
+</g>
+<g >
+<title>zenoh_transport::common::batch::WBatch::finalize (3,009,027 samples, 0.52%)</title><rect x="1183.8" y="765" width="6.2" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
+<text  x="1186.81" y="775.5" ></text>
+</g>
+<g >
+<title>[unknown] (157,472,413 samples, 27.45%)</title><rect x="851.7" y="333" width="323.9" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="854.68" y="343.5" >[unknown]</text>
+</g>
+<g >
+<title>event_listener::sys::&lt;impl event_listener::Inner&lt;T&gt;&gt;::with_inner (4,012,036 samples, 0.70%)</title><rect x="395.8" y="749" width="8.2" height="15.0" fill="rgb(245,188,45)" rx="2" ry="2" />
+<text  x="398.77" y="759.5" ></text>
+</g>
+<g >
+<title>tokio::runtime::scheduler::Handle::current (3,009,027 samples, 0.52%)</title><rect x="315.3" y="781" width="6.2" height="15.0" fill="rgb(252,217,51)" rx="2" ry="2" />
+<text  x="318.31" y="791.5" ></text>
+</g>
+<g >
+<title>&lt;tokio::sync::notify::Notified as core::future::future::Future&gt;::poll (3,009,027 samples, 0.52%)</title><rect x="288.5" y="781" width="6.2" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="291.50" y="791.5" ></text>
+</g>
+<g >
+<title>tokio::runtime::task::raw::poll (573,721,148 samples, 100.00%)</title><rect x="10.0" y="861" width="1180.0" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="13.00" y="871.5" >tokio::runtime::task::raw::poll</text>
+</g>
+<g >
+<title>[unknown] (20,060,180 samples, 3.50%)</title><rect x="195.7" y="653" width="41.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="198.66" y="663.5" >[un..</text>
+</g>
+<g >
+<title>tokio::runtime::time::entry::_::&lt;impl core::ops::drop::Drop for tokio::runtime::time::entry::TimerEntry&gt;::drop (5,015,045 samples, 0.87%)</title><rect x="426.7" y="765" width="10.3" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="429.71" y="775.5" ></text>
+</g>
+<g >
+<title>heap_for_ptr (1,003,009 samples, 0.17%)</title><rect x="412.3" y="717" width="2.0" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="415.27" y="727.5" ></text>
+</g>
+<g >
+<title>[unknown] (328,986,952 samples, 57.34%)</title><rect x="498.9" y="589" width="676.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="501.92" y="599.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (89,267,801 samples, 15.56%)</title><rect x="992.0" y="141" width="183.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="994.96" y="151.5" >[unknown]</text>
+</g>
+<g >
+<title>__GI___libc_malloc (1,003,009 samples, 0.17%)</title><rect x="1181.7" y="749" width="2.1" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="1184.75" y="759.5" ></text>
+</g>
+<g >
+<title>all (573,721,148 samples, 100%)</title><rect x="10.0" y="957" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="967.5" ></text>
+</g>
+<g >
+<title>start_thread (573,721,148 samples, 100.00%)</title><rect x="10.0" y="925" width="1180.0" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="13.00" y="935.5" >start_thread</text>
+</g>
+<g >
+<title>[unknown] (25,075,225 samples, 4.37%)</title><rect x="185.3" y="669" width="51.6" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="188.35" y="679.5" >[unkn..</text>
+</g>
+<g >
+<title>[unknown] (337,011,024 samples, 58.74%)</title><rect x="482.4" y="621" width="693.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="485.41" y="631.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (207,622,863 samples, 36.19%)</title><rect x="748.5" y="477" width="427.1" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="751.53" y="487.5" >[unknown]</text>
+</g>
+<g >
+<title>[unknown] (67,201,603 samples, 11.71%)</title><rect x="1037.3" y="109" width="138.3" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1040.34" y="119.5" >[unknown]</text>
+</g>
+<g >
+<title>checked_request2size (1,003,009 samples, 0.17%)</title><rect x="420.5" y="733" width="2.1" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="423.52" y="743.5" ></text>
+</g>
+<g >
+<title>zenoh_transport::unicast::link::TransportLinkUnicastTx::send_batch::{{closure}} (364,092,267 samples, 63.46%)</title><rect x="441.2" y="781" width="748.8" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="444.15" y="791.5" >zenoh_transport::unicast::link::TransportLinkUnicastTx::send_batch::{{closure}}</text>
+</g>
+<g >
+<title>tokio::runtime::io::driver::Driver::turn (68,204,612 samples, 11.89%)</title><rect x="107.0" y="797" width="140.2" height="15.0" fill="rgb(212,33,8)" rx="2" ry="2" />
+<text  x="109.96" y="807.5" >tokio::runtime::i..</text>
+</g>
+<g >
+<title>event_listener::Event&lt;T&gt;::listen (3,009,027 samples, 0.52%)</title><rect x="416.4" y="765" width="6.2" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="419.40" y="775.5" ></text>
+</g>
+<g >
+<title>std::sys::pal::unix::time::Timespec::sub_timespec (1,003,009 samples, 0.17%)</title><rect x="408.1" y="733" width="2.1" height="15.0" fill="rgb(236,142,34)" rx="2" ry="2" />
+<text  x="411.15" y="743.5" ></text>
+</g>
+<g >
+<title>[unknown] (159,478,431 samples, 27.80%)</title><rect x="847.6" y="349" width="328.0" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="850.55" y="359.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio_util::sync::cancellation_token::CancellationToken::is_cancelled (3,009,027 samples, 0.52%)</title><rect x="327.7" y="781" width="6.2" height="15.0" fill="rgb(213,37,8)" rx="2" ry="2" />
+<text  x="330.69" y="791.5" ></text>
+</g>
+<g >
+<title>[unknown] (127,382,143 samples, 22.20%)</title><rect x="913.6" y="221" width="262.0" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="916.57" y="231.5" >[unknown]</text>
+</g>
+<g >
+<title>tokio::runtime::task::waker::wake_by_val (6,018,054 samples, 1.05%)</title><rect x="61.6" y="813" width="12.4" height="15.0" fill="rgb(223,83,19)" rx="2" ry="2" />
+<text  x="64.57" y="823.5" ></text>
+</g>
+<g >
+<title>__GI___pthread_disable_asynccancel (1,003,009 samples, 0.17%)</title><rect x="1175.6" y="701" width="2.0" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="1178.56" y="711.5" ></text>
+</g>
+<g >
+<title>__libc_send (349,047,132 samples, 60.84%)</title><rect x="459.7" y="733" width="717.9" height="15.0" fill="rgb(222,78,18)" rx="2" ry="2" />
+<text  x="462.72" y="743.5" >__libc_send</text>
+</g>
+<g >
+<title>[unknown] (281,845,529 samples, 49.13%)</title><rect x="595.9" y="525" width="579.7" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="598.87" y="535.5" >[unknown]</text>
+</g>
+</g>
+</svg>

@@ -1,0 +1,10 @@
+# Per-thread analysis: sensors_demo
+# Source: captures/runtime/perf_sensors_demo.data
+# Total samples: 42135405081
+thread_label	samples	pct_of_total	top_function	top_function_pct
+gz-sim-main/938299	27986960127	66.4	Ogre::Node::updateFromParentImpl	22.7
+gz-sim-main/938266	13554663626	32.1	[libdart.so.6.13.2]	21.7
+tx-0/938391	485456356	1.1	[unknown]	72.9
+gz-sim-main/938301	102306918	.2	[unknown]	60.8
+Watchdog_Valida/938525	3009027	0	zenoh_shm::watchdog::validator::WatchdogValidator::new::{{closure}}	66.7
+Watchdog_Confir/938524	3009027	0	zenoh_shm::watchdog::periodic_task::PeriodicTask::new::{{closure}}	33.3

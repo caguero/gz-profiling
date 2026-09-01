@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Gazebo Server Profiling &mdash; 2026-09-01 (PR #3447 + Zenoh SHM)</title>
+  <style>
+    body { font-family: 'Palatino', 'Georgia', serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color: #333; }
+    h1 { color: #333366; border-bottom: 2px solid #333366; padding-bottom: 10px; }
+    h2 { color: #444477; margin-top: 30px; }
+    a { color: #336; }
+    table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #ddd; }
+    th { background: #f5f5f5; color: #333366; }
+    tr:hover { background: #f9f9f9; }
+    .back { margin-bottom: 20px; }
+    .note { color: #666; font-size: 0.9em; }
+    .pdf { font-size: 1.05em; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <p class="back"><a href="../">&larr; All benchmark runs</a></p>
+  <h1>Gazebo Server Profiling &mdash; 2026-09-01</h1>
+
+  <p class="pdf">&#128196; <a href="findings_report.pdf">Full findings report (PDF)</a>
+  <span class="note">(<a href="findings_report.md">Markdown source</a>)</span></p>
+
+  <p class="note">
+    Profiling of the headless Gazebo <strong>server</strong> (<code>gz-sim-main</code>) on
+    <strong>gz-sim PR #3447</strong> (ECM on EnTT) with <strong>gz-transport PR #868 + #842</strong>
+    (Zenoh 1.8.0 with shared memory, <code>GZ_TRANSPORT_IMPLEMENTATION=zenoh</code>); every other
+    Gazebo library at the tip of <code>main</code> on 2026-09-01.<br>
+    CPU: Intel Core Ultra 9 285HX (24 cores, hybrid) &middot; GPU: NVIDIA RTX PRO 3000 (driver 580.159.03, EGL headless)
+    &middot; Kernel 6.17.0-35 &middot; perf 6.17.13 &middot; DART 6.13.2 &middot; OgreNext 2.3.1<br>
+    Build: RelWithDebInfo, <code>-fno-omit-frame-pointer</code>, <code>ENABLE_PROFILER=OFF</code>.
+    Sampled with <code>perf -e task-clock -F 997 --call-graph dwarf</code>; all worlds at RTF=0;
+    rendering sensor worlds run with <code>--headless-rendering</code> and one subscriber per sensor topic.<br>
+    Click any flamegraph to open it interactively (click frames to zoom, Ctrl+F to search).
+  </p>
+
+  <h2>Runtime Flamegraphs (30 s steady state, all threads)</h2>
+  <p class="note">RTF and steps/s come from an unprofiled pass (<code>SKIP_PERF=1</code>, <code>*_rtf.txt</code>);
+  "cores busy" is CPU time / 30 s during the perf capture.</p>
+  <table>
+    <tr><th>World</th><th>Stress axis</th><th>RTF</th><th>Steps/s</th><th>Cores busy</th><th>Flamegraph</th><th>Hotspots</th></tr>
+    <tr><td>3k_shapes_static</td><td>3000 static models: framework + broadphase</td><td>12.0</td><td>12,023</td><td>1.00</td><td><a href="runtime/3k_shapes_static.svg">Open</a></td><td><a href="runtime/3k_shapes_static_hotspots.txt">txt</a></td></tr>
+    <tr><td>3k_shapes</td><td>3000 dynamic models: DART solver</td><td>12.7</td><td>12,732</td><td>1.00</td><td><a href="runtime/3k_shapes.svg">Open</a></td><td><a href="runtime/3k_shapes_hotspots.txt">txt</a></td></tr>
+    <tr><td>sensors</td><td>non rendering sensors: per step overhead</td><td>46.9</td><td>46,910</td><td>1.00</td><td><a href="runtime/sensors.svg">Open</a></td><td><a href="runtime/sensors_hotspots.txt">txt</a></td></tr>
+    <tr><td>jetty</td><td>complex scene: ODE broadphase (4 ms step)</td><td>24.3</td><td>6,063</td><td>1.00</td><td><a href="runtime/jetty.svg">Open</a></td><td><a href="runtime/jetty_hotspots.txt">txt</a></td></tr>
+    <tr><td>gpu_lidar_sensor</td><td>one GPU lidar, 1 subscriber</td><td>50.7</td><td>50,720</td><td>1.27</td><td><a href="runtime/gpu_lidar_sensor.svg">Open</a></td><td><a href="runtime/gpu_lidar_sensor_hotspots.txt">txt</a></td></tr>
+    <tr><td>sensors_demo</td><td>six rendering sensors, 8 subscribers</td><td>11.3</td><td>11,337</td><td>1.40</td><td><a href="runtime/sensors_demo.svg">Open</a></td><td><a href="runtime/sensors_demo_hotspots.txt">txt</a></td></tr>
+    <tr><td>moving_robots_and_sensors</td><td>PR #3846: 2 vehicles, arm, 10 sensors, 12 subscribers</td><td>5.9</td><td>5,908</td><td>1.49</td><td><a href="runtime/moving_robots_and_sensors.svg">Open</a></td><td><a href="runtime/moving_robots_and_sensors_hotspots.txt">txt</a></td></tr>
+  </table>
+
+  <h2>Per Thread Flamegraphs</h2>
+  <p class="note">Share of process CPU per thread. The simulation thread is always saturated; rendering sensors run on
+  a second thread; Zenoh transport threads (<code>tx-0</code>, <code>rx-*</code>, SHM watchdogs) stay below 1.2%.</p>
+  <table>
+    <tr><th>World</th><th>Simulation thread</th><th>Sensors render thread</th><th>All threads</th></tr>
+    <tr><td>3k_shapes_static</td><td><a href="threads/3k_shapes_static_thread_gz-sim-main_927855.svg">100%</a></td><td>&mdash;</td><td><a href="threads/3k_shapes_static_threads.tsv">tsv</a></td></tr>
+    <tr><td>3k_shapes</td><td><a href="threads/3k_shapes_thread_gz-sim-main_927373.svg">100%</a></td><td>&mdash;</td><td><a href="threads/3k_shapes_threads.tsv">tsv</a></td></tr>
+    <tr><td>sensors</td><td><a href="threads/sensors_thread_gz-sim-main_931438.svg">100%</a></td><td>&mdash;</td><td><a href="threads/sensors_threads.tsv">tsv</a></td></tr>
+    <tr><td>jetty</td><td><a href="threads/jetty_thread_gz-sim-main_928987.svg">100%</a></td><td>&mdash;</td><td><a href="threads/jetty_threads.tsv">tsv</a></td></tr>
+    <tr><td>gpu_lidar_sensor</td><td><a href="threads/gpu_lidar_sensor_thread_gz-sim-main_928393.svg">73%</a></td><td><a href="threads/gpu_lidar_sensor_thread_gz-sim-main_928426.svg">26%</a></td><td><a href="threads/gpu_lidar_sensor_threads.tsv">tsv</a></td></tr>
+    <tr><td>sensors_demo</td><td><a href="threads/sensors_demo_thread_gz-sim-main_938266.svg">32%</a></td><td><a href="threads/sensors_demo_thread_gz-sim-main_938299.svg">66%</a></td><td><a href="threads/sensors_demo_threads.tsv">tsv</a></td></tr>
+    <tr><td>moving_robots_and_sensors</td><td><a href="threads/moving_robots_and_sensors_thread_gz-sim-main_929778.svg">64%</a></td><td><a href="threads/moving_robots_and_sensors_thread_gz-sim-main_929811.svg">34%</a></td><td><a href="threads/moving_robots_and_sensors_threads.tsv">tsv</a></td></tr>
+  </table>
+
+  <h2>Loading Flamegraphs (startup + 1 iteration)</h2>
+  <p class="note">Wall clock is the median of three unprofiled runs of <code>gz-sim-main -s -r --iterations 1</code>
+  (<code>*_wallclock_unprofiled.txt</code>); the perf wrapped run in <code>*_wallclock.txt</code> is 5 to 7x slower
+  because of DWARF stack copying.</p>
+  <table>
+    <tr><th>World</th><th>Wall clock</th><th>Flamegraph</th></tr>
+    <tr><td>3k_shapes_static</td><td>2.05 s</td><td><a href="loading/3k_shapes_static_loading.svg">Open</a></td></tr>
+    <tr><td>3k_shapes</td><td>2.11 s</td><td><a href="loading/3k_shapes_loading.svg">Open</a></td></tr>
+    <tr><td>sensors</td><td>0.82 s</td><td><a href="loading/sensors_loading.svg">Open</a></td></tr>
+    <tr><td>jetty</td><td>1.55 s</td><td><a href="loading/jetty_loading.svg">Open</a></td></tr>
+    <tr><td>gpu_lidar_sensor</td><td>1.22 s</td><td><a href="loading/gpu_lidar_sensor_loading.svg">Open</a></td></tr>
+    <tr><td>sensors_demo</td><td>1.19 s</td><td><a href="loading/sensors_demo_loading.svg">Open</a></td></tr>
+    <tr><td>moving_robots_and_sensors</td><td>1.22 s</td><td><a href="loading/moving_robots_and_sensors_loading.svg">Open</a></td></tr>
+  </table>
+
+  <h2>Cache Counters (perf stat, 10 s, unprofiled)</h2>
+  <table>
+    <tr><th>World</th><th>IPC</th><th>L1d miss</th><th>LLC load miss</th><th>Raw</th></tr>
+    <tr><td>3k_shapes_static</td><td>0.71</td><td>8.79%</td><td>15.7%</td><td><a href="cache/3k_shapes_static_cache_stats.txt">txt</a></td></tr>
+    <tr><td>3k_shapes</td><td>1.61</td><td>1.15%</td><td>54.3%</td><td><a href="cache/3k_shapes_cache_stats.txt">txt</a></td></tr>
+    <tr><td>sensors</td><td>2.71</td><td>0.10%</td><td>6.2%</td><td><a href="cache/sensors_cache_stats.txt">txt</a></td></tr>
+    <tr><td>jetty</td><td>2.11</td><td>1.90%</td><td>0.5%</td><td><a href="cache/jetty_cache_stats.txt">txt</a></td></tr>
+    <tr><td>gpu_lidar_sensor</td><td>2.59</td><td>0.27%</td><td>6.6%</td><td><a href="cache/gpu_lidar_sensor_cache_stats.txt">txt</a></td></tr>
+    <tr><td>sensors_demo</td><td>2.65</td><td>0.73%</td><td>39.0%</td><td><a href="cache/sensors_demo_cache_stats.txt">txt</a></td></tr>
+    <tr><td>moving_robots_and_sensors</td><td>2.47</td><td>0.79%</td><td>37.0%</td><td><a href="cache/moving_robots_and_sensors_cache_stats.txt">txt</a></td></tr>
+  </table>
+
+  <h2>Unified Summary (gz_summary.sh)</h2>
+  <table>
+    <tr><th>World</th><th>Report</th></tr>
+    <tr><td>3k_shapes_static</td><td><a href="summary/3k_shapes_static_summary.tsv">TSV</a> / <a href="summary/3k_shapes_static_summary.txt">txt</a></td></tr>
+    <tr><td>3k_shapes</td><td><a href="summary/3k_shapes_summary.tsv">TSV</a> / <a href="summary/3k_shapes_summary.txt">txt</a></td></tr>
+    <tr><td>sensors</td><td><a href="summary/sensors_summary.tsv">TSV</a> / <a href="summary/sensors_summary.txt">txt</a></td></tr>
+    <tr><td>jetty</td><td><a href="summary/jetty_summary.tsv">TSV</a> / <a href="summary/jetty_summary.txt">txt</a></td></tr>
+    <tr><td>gpu_lidar_sensor</td><td><a href="summary/gpu_lidar_sensor_summary.tsv">TSV</a> / <a href="summary/gpu_lidar_sensor_summary.txt">txt</a></td></tr>
+    <tr><td>sensors_demo</td><td><a href="summary/sensors_demo_summary.tsv">TSV</a> / <a href="summary/sensors_demo_summary.txt">txt</a></td></tr>
+    <tr><td>moving_robots_and_sensors</td><td><a href="summary/moving_robots_and_sensors_summary.tsv">TSV</a> / <a href="summary/moving_robots_and_sensors_summary.txt">txt</a></td></tr>
+  </table>
+
+  <p><small>Generated with <a href="https://github.com/brendangregg/FlameGraph">FlameGraph</a> and Linux perf.
+  Scripts and worlds: <a href="https://github.com/caguero/gz-profiling">github.com/caguero/gz-profiling</a>.</small></p>
+</body>
+</html>

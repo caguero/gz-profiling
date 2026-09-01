@@ -6,12 +6,22 @@
 # run_mode: headless (default), gui, headless-rendering
 # topics:   sensor topics to subscribe to (forces rendering pipeline to run)
 #
+# If an executable <world>.setup.sh exists next to the SDF it is run after the
+# startup wait and the subscribers are up (e.g. to publish velocity commands).
+#
+# Environment:
+#   SKIP_PERF=1   run the world for the duration without perf and only write
+#                 <label>_stats.txt (a clean real time factor measurement)
+#
 # Prerequisites:
 #   - Workspace built with ENABLE_PROFILER=OFF, RelWithDebInfo, -fno-omit-frame-pointer
 #   - sudo sysctl kernel.perf_event_paranoid=1
 #   - FlameGraph scripts at ~/rotary_ws/tools/FlameGraph/
 #
 # Notes:
+#   - Samples task-clock (not cycles): on hybrid P/E core CPUs the default
+#     cycles event is split into cpu_core/cpu_atom PMUs and perf script keeps
+#     only one of them, silently dropping about half of the samples.
 #   - Uses --call-graph dwarf for reliable stack unwinding (fp produces [unknown] stacks)
 #   - Waits for loading to complete before recording (large worlds can take 30s+)
 
@@ -119,11 +129,33 @@ else
     echo "[3/6] No sensor topics to subscribe (skipping)"
 fi
 
-# Capture with perf
-echo "[4/6] Recording perf data for ${DURATION}s at 997 Hz..."
-perf record -F 997 --call-graph dwarf -p "$GZ_PID" \
-    -o "$OUTPUT_DIR/perf_${LABEL}.data" \
-    sleep "$DURATION" 2>&1 | tail -3
+# Run an optional per-world setup script (e.g. publish velocity commands so
+# robots move). Looked up as <world>.setup.sh next to the SDF.
+SETUP_SCRIPT="${WORLD%.sdf}.setup.sh"
+if [[ -x "$SETUP_SCRIPT" ]]; then
+    echo "  Running setup script: $SETUP_SCRIPT"
+    "$SETUP_SCRIPT" || echo "  WARNING: setup script failed" >&2
+    sleep 2
+fi
+
+# Capture with perf (or, with SKIP_PERF=1, just let the world run so the
+# stats snapshot below gives an unperturbed real time factor)
+if [[ "${SKIP_PERF:-0}" == "1" ]]; then
+    echo "[4/6] SKIP_PERF=1: running ${DURATION}s without perf..."
+    sleep "$DURATION"
+else
+    echo "[4/6] Recording perf data for ${DURATION}s at 997 Hz..."
+    perf record -e task-clock -F 997 --call-graph dwarf -p "$GZ_PID" \
+        -o "$OUTPUT_DIR/perf_${LABEL}.data" \
+        sleep "$DURATION" 2>&1 | tail -3
+fi
+
+# Snapshot the world statistics (sim time, real time, iterations, RTF)
+STATS_TOPIC=$(gz topic -l 2>/dev/null | grep -m1 '^/world/.*/stats$' || true)
+if [[ -n "$STATS_TOPIC" ]]; then
+    timeout 5 gz topic -e -n 1 -t "$STATS_TOPIC" > "$OUTPUT_DIR/${LABEL}_stats.txt" 2>/dev/null || true
+    echo "  Stats: $(tr -s ' \n' ' ' < "$OUTPUT_DIR/${LABEL}_stats.txt" | cut -c1-160)"
+fi
 
 # Cleanup
 echo "[5/6] Stopping simulation and subscribers..."
@@ -133,6 +165,11 @@ done
 kill "$GZ_PID" 2>/dev/null || true
 wait "$GZ_PID" 2>/dev/null || true
 
+if [[ "${SKIP_PERF:-0}" == "1" ]]; then
+    echo "[6/6] SKIP_PERF=1: no flamegraph. Stats: $OUTPUT_DIR/${LABEL}_stats.txt"
+    exit 0
+fi
+
 # Generate flamegraph
 echo "[6/6] Generating flamegraph..."
 perf script -i "$OUTPUT_DIR/perf_${LABEL}.data" 2>/dev/null \
@@ -141,7 +178,7 @@ perf script -i "$OUTPUT_DIR/perf_${LABEL}.data" 2>/dev/null \
 
 "$FLAMEGRAPH_DIR/flamegraph.pl" \
     --title "$LABEL" \
-    --subtitle "$(date '+%Y-%m-%d %H:%M') — ${DURATION}s @ 997Hz ($RUN_MODE)" \
+    --subtitle "$(date '+%Y-%m-%d %H:%M'), ${DURATION}s @ 997Hz ($RUN_MODE)" \
     "$OUTPUT_DIR/${LABEL}.folded" \
     > "$OUTPUT_DIR/${LABEL}.svg"
 
@@ -154,6 +191,8 @@ echo ""
 
 # Print top-20 self-time leaves
 echo "=== Top 20 self-time leaves ==="
-awk '{ n=split($1,a,";"); printf "%s\t%d\n", a[n], $NF }' "$OUTPUT_DIR/${LABEL}.folded" \
+# (C++ symbols contain spaces, so strip the trailing count and split on ";".
+#  "|| true" keeps a SIGPIPE from head aborting the script under pipefail.)
+awk '{ cnt=$NF; sub(/ [0-9]+$/, ""); n=split($0,a,";"); printf "%s\t%d\n", a[n], cnt }' "$OUTPUT_DIR/${LABEL}.folded" \
     | awk -F'\t' '{s[$1]+=$2} END {for(k in s) printf "%12d  %s\n",s[k],k}' \
-    | sort -rn | head -20
+    | sort -rn | head -20 || true

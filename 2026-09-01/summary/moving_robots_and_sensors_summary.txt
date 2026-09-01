@@ -1,0 +1,28 @@
+============================================
+  Unified Profiling Summary: moving_robots_and_sensors
+============================================
+  Dimensions: cpu
+  CPU total:  44558674825 samples
+
+  Rank Function                                           Score   CPU%  Cache  HITM% Sched Sources
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1	gz::sim::v11::systems::SensorsPrivate::RunOnce	40	34.1	-	-	-	cpu
+2	gz::sim::v11::systems::SensorsPrivate::RenderThread	40	34.1	-	-	-	cpu
+3	gz::sim::v11::systems::Physics::Update	40	59.7	-	-	-	cpu
+4	gz::sim::v11::systems::PhysicsPrivate::Step	40	49.3	-	-	-	cpu
+5	gz::sim::v11::SimulationRunner::UpdateSystems	40	63.5	-	-	-	cpu
+6	gz::sim::v11::SimulationRunner::Step	40	63.7	-	-	-	cpu
+7	gz::sim::v11::SimulationRunner::Run	40	63.8	-	-	-	cpu
+8	gz::sim::v11::ServerPrivate::Run	40	63.8	-	-	-	cpu
+9	gz::sensors::v11::Sensor::Update	40	33.6	-	-	-	cpu
+10	gz::sensors::v11::RgbdCameraSensor::Update	40	14.3	-	-	-	cpu
+11	gz::sensors::v11::RenderingSensor::Render	40	27.5	-	-	-	cpu
+12	gz::sensors::v11::Manager::RunOnce	40	33.1	-	-	-	cpu
+13	gz::sensors::v11::CameraSensor::Update	40	10.3	-	-	-	cpu
+14	gz::physics::ForwardStep::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList>::Step	40	49.1	-	-	-	cpu
+15	gz::physics::dartsim::SimulationFeatures::WorldForwardStep	40	48.7	-	-	-	cpu
+16	gz::sim::v11::systems::PhysicsPrivate::UpdateSim	25	8.1	-	-	-	cpu
+17	gz::sim::v11::systems::PhysicsPrivate::UpdateCollisions	25	5.9	-	-	-	cpu
+18	gz::sensors::v11::ThermalCameraSensor::Update	25	7.2	-	-	-	cpu
+19	gz::rendering::v11::Ogre2RenderTarget::Render	25	8.1	-	-	-	cpu
+20	gz::rendering::v11::Ogre2GpuReadbackTicket::DownloadAndMap	25	5.3	-	-	-	cpu

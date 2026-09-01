@@ -1,0 +1,18 @@
+============================================
+  Cache Stats: PID 939953 (10s sample)
+============================================
+
+
+ Performance counter stats for process id '939953':
+
+       711,503,029      cpu_core/cache-references/                                              (99.99%)
+       479,179,420      cpu_core/cache-misses/           #   67.35% of all cache refs           (99.99%)
+    22,883,505,670      cpu_core/L1-dcache-loads/                                               (99.99%)
+       263,419,009      cpu_core/L1-dcache-load-misses/  #    1.15% of all L1-dcache accesses   (99.99%)
+       149,823,658      cpu_core/LLC-loads/                                                     (99.99%)
+        81,305,698      cpu_core/LLC-load-misses/        #   54.27% of all LL-cache accesses    (99.99%)
+    80,195,687,884      cpu_core/instructions/           #    1.61  insn per cycle              (99.99%)
+    49,744,357,902      cpu_core/cycles/                                                        (99.99%)
+
+      10.004304135 seconds time elapsed
+

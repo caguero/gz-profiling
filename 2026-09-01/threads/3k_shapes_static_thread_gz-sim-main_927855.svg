@@ -1,0 +1,1827 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="558" onload="init(evt)" viewBox="0 0 1200 558" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="558.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >3k_shapes_static thread: gz-sim-main-?/927855 (100.0%)</text>
+<text id="subtitle" x="600.00" y="48" >29985957064 samples</text>
+<text id="details" x="10.00" y="541" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="541" > </text>
+<g id="frames">
+<g >
+<title>gz::math::eigen3::convert (394,182,537 samples, 1.31%)</title><rect x="1106.6" y="301" width="15.5" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="1109.56" y="311.5" ></text>
+</g>
+<g >
+<title>dart::collision::CollisionGroup::update (1,989,969,856 samples, 6.64%)</title><rect x="338.2" y="237" width="78.3" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="341.23" y="247.5" >dart::col..</text>
+</g>
+<g >
+<title>std::lock_guard&lt;std::mutex&gt;::lock_guard (3,009,027 samples, 0.01%)</title><rect x="10.6" y="365" width="0.1" height="15.0" fill="rgb(235,139,33)" rx="2" ry="2" />
+<text  x="13.63" y="375.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::uninitialized_copy&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, gz::physics::WorldPose*&gt; (97,291,873 samples, 0.32%)</title><rect x="1123.6" y="173" width="3.8" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="1126.57" y="183.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::call_assignment&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt; (98,294,882 samples, 0.33%)</title><rect x="1035.6" y="253" width="3.9" height="15.0" fill="rgb(211,27,6)" rx="2" ry="2" />
+<text  x="1038.59" y="263.5" ></text>
+</g>
+<g >
+<title>unlink_chunk (7,021,063 samples, 0.02%)</title><rect x="761.9" y="141" width="0.3" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="764.95" y="151.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::pstoret&lt;double, double __vector (40,120,360 samples, 0.13%)</title><rect x="1036.2" y="125" width="1.6" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="1039.22" y="135.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::pstore&lt;double, double __vector (40,120,360 samples, 0.13%)</title><rect x="1036.2" y="109" width="1.6" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="1039.22" y="119.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPoses::operator= (12,036,108 samples, 0.04%)</title><rect x="12.7" y="189" width="0.5" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="15.68" y="199.5" ></text>
+</g>
+<g >
+<title>gz::transport::v16::MessagePublisher::MsgTypeName[abi:cxx11] (5,015,045 samples, 0.02%)</title><rect x="10.9" y="349" width="0.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="13.87" y="359.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPoses::operator= (17,051,153 samples, 0.06%)</title><rect x="11.9" y="221" width="0.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="14.89" y="231.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__do_uninit_copy&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, gz::physics::WorldPose*&gt; (97,291,873 samples, 0.32%)</title><rect x="1123.6" y="141" width="3.8" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="1126.57" y="151.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;unsigned long, std::pair&lt;unsigned long const, std::tuple&lt;gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::GravityFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::RayIntersectionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::BatchRayIntersectionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::SetContactPropertiesCallbackFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::NestedModelFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionDetectorFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::SolverFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::WorldModelFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionPairMaxContactsFeatureList&gt; &gt; &gt; &gt;, std::allocator&lt;std::pair&lt;unsigned long const, std::tuple&lt;gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::GravityFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::RayIntersectionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::BatchRayIntersectionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::SetContactPropertiesCallbackFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::NestedModelFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionDetectorFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::SolverFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::WorldModelFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionPairMaxContactsFeatureList&gt; &gt; &gt; &gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;unsigned long&gt;, std::hash&lt;unsigned long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, true&gt; &gt;::find (5,015,045 samples, 0.02%)</title><rect x="1167.1" y="269" width="0.2" height="15.0" fill="rgb(251,216,51)" rx="2" ry="2" />
+<text  x="1170.15" y="279.5" ></text>
+</g>
+<g >
+<title>tcache_put (7,021,063 samples, 0.02%)</title><rect x="887.6" y="157" width="0.3" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="890.62" y="167.5" ></text>
+</g>
+<g >
+<title>dart::simulation::World::setGravity (479,438,302 samples, 1.60%)</title><rect x="1167.4" y="301" width="18.9" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="1170.42" y="311.5" ></text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (94,282,846 samples, 0.31%)</title><rect x="412.4" y="205" width="3.7" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="415.36" y="215.5" ></text>
+</g>
+<g >
+<title>dxCylinder::computeAABB (45,135,405 samples, 0.15%)</title><rect x="820.3" y="189" width="1.8" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="823.32" y="199.5" ></text>
+</g>
+<g >
+<title>__dynamic_cast@plt (4,012,036 samples, 0.01%)</title><rect x="416.4" y="205" width="0.1" height="15.0" fill="rgb(243,176,42)" rx="2" ry="2" />
+<text  x="419.38" y="215.5" ></text>
+</g>
+<g >
+<title>_int_malloc (4,012,036 samples, 0.01%)</title><rect x="15.8" y="141" width="0.2" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="18.84" y="151.5" ></text>
+</g>
+<g >
+<title>CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt;, const std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt;&amp;&gt; (13,039,117 samples, 0.04%)</title><rect x="12.6" y="237" width="0.6" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="15.64" y="247.5" ></text>
+</g>
+<g >
+<title>gz::transport::v16::Node::Publisher::HasConnections (5,015,045 samples, 0.02%)</title><rect x="1188.0" y="349" width="0.2" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="1191.03" y="359.5" ></text>
+</g>
+<g >
+<title>__dynamic_cast (8,024,072 samples, 0.03%)</title><rect x="416.1" y="205" width="0.3" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="419.07" y="215.5" ></text>
+</g>
+<g >
+<title>Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt;::Matrix&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt; &gt; (166,499,494 samples, 0.56%)</title><rect x="1106.6" y="285" width="6.5" height="15.0" fill="rgb(239,160,38)" rx="2" ry="2" />
+<text  x="1109.56" y="295.5" ></text>
+</g>
+<g >
+<title>double Eigen::internal::redux_impl&lt;Eigen::internal::scalar_sum_op&lt;double, double&gt;, Eigen::internal::redux_evaluator&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt;, 0, 2&gt;::run&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt; (80,240,720 samples, 0.27%)</title><rect x="1117.1" y="189" width="3.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1120.14" y="199.5" ></text>
+</g>
+<g >
+<title>dart::collision::CollisionGroup::updateSkeletonSource (8,024,072 samples, 0.03%)</title><rect x="1188.6" y="477" width="0.3" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="1191.58" y="487.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; std::__copy_move_a&lt;false, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; &gt; (12,036,108 samples, 0.04%)</title><rect x="12.7" y="141" width="0.5" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="15.68" y="151.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::assign_op&lt;double, double&gt;::assignPacket&lt;16, double __vector (40,120,360 samples, 0.13%)</title><rect x="1036.2" y="141" width="1.6" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="1039.22" y="151.5" ></text>
+</g>
+<g >
+<title>Eigen::DenseBase&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;::hasNaN (12,036,108 samples, 0.04%)</title><rect x="92.1" y="301" width="0.5" height="15.0" fill="rgb(228,107,25)" rx="2" ry="2" />
+<text  x="95.14" y="311.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::SimulationRunner::UpdateSystems (29,908,725,371 samples, 99.74%)</title><rect x="11.4" y="381" width="1177.0" height="15.0" fill="rgb(236,142,34)" rx="2" ry="2" />
+<text  x="14.42" y="391.5" >gz::sim::v11::SimulationRunner::UpdateSystems</text>
+</g>
+<g >
+<title>void std::_Construct&lt;gz::physics::WorldPose, gz::physics::WorldPose const&amp;&gt; (31,093,279 samples, 0.10%)</title><rect x="14.0" y="125" width="1.2" height="15.0" fill="rgb(235,140,33)" rx="2" ry="2" />
+<text  x="16.99" y="135.5" ></text>
+</g>
+<g >
+<title>__memset_avx2_unaligned_erms (343,029,078 samples, 1.14%)</title><rect x="801.5" y="205" width="13.5" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="804.46" y="215.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::clearCollidingBodies (69,207,621 samples, 0.23%)</title><rect x="965.8" y="269" width="2.8" height="15.0" fill="rgb(231,120,28)" rx="2" ry="2" />
+<text  x="968.85" y="279.5" ></text>
+</g>
+<g >
+<title>std::_Vector_base&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt;::_M_allocate (989,969,883 samples, 3.30%)</title><rect x="1127.4" y="157" width="39.0" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="1130.40" y="167.5" >std..</text>
+</g>
+<g >
+<title>gz::physics::CompositeData::Copy (13,039,117 samples, 0.04%)</title><rect x="12.6" y="253" width="0.6" height="15.0" fill="rgb(217,55,13)" rx="2" ry="2" />
+<text  x="15.64" y="263.5" ></text>
+</g>
+<g >
+<title>_int_malloc (15,045,135 samples, 0.05%)</title><rect x="761.6" y="157" width="0.6" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="764.63" y="167.5" ></text>
+</g>
+<g >
+<title>Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;::~Matrix (46,138,414 samples, 0.15%)</title><rect x="92.6" y="301" width="1.8" height="15.0" fill="rgb(219,66,15)" rx="2" ry="2" />
+<text  x="95.61" y="311.5" ></text>
+</g>
+<g >
+<title>memcpy@plt (7,021,063 samples, 0.02%)</title><rect x="120.1" y="269" width="0.3" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="123.08" y="279.5" ></text>
+</g>
+<g >
+<title>malloc_consolidate (453,360,068 samples, 1.51%)</title><rect x="781.3" y="157" width="17.8" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="784.29" y="167.5" ></text>
+</g>
+<g >
+<title>void gz::physics::CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt; const&amp;&gt; (13,039,117 samples, 0.04%)</title><rect x="12.6" y="221" width="0.6" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="15.64" y="231.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_iterator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; std::_Rb_tree&lt;gz::physics::CompositeData::TypeName, std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt;, std::_Select1st&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt;::_M_emplace_hint_unique&lt;std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (4,012,036 samples, 0.01%)</title><rect x="15.8" y="269" width="0.2" height="15.0" fill="rgb(229,111,26)" rx="2" ry="2" />
+<text  x="18.84" y="279.5" ></text>
+</g>
+<g >
+<title>gz::physics::SpecifyData&lt;gz::physics::ExpectData&lt;gz::physics::Contacts&gt;, gz::physics::ExpectData&lt;gz::physics::JointPositions&gt; &gt;::operator= (33,099,297 samples, 0.11%)</title><rect x="12.6" y="285" width="1.3" height="15.0" fill="rgb(213,38,9)" rx="2" ry="2" />
+<text  x="15.64" y="295.5" ></text>
+</g>
+<g >
+<title>Eigen::BlockImpl&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false, Eigen::Dense&gt;::BlockImpl (31,093,279 samples, 0.10%)</title><rect x="1120.3" y="253" width="1.2" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="1123.30" y="263.5" ></text>
+</g>
+<g >
+<title>std::_Vector_base&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt;::_Vector_base (989,969,883 samples, 3.30%)</title><rect x="1127.4" y="189" width="39.0" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="1130.40" y="199.5" >std..</text>
+</g>
+<g >
+<title>dBodySetPosition@plt (8,024,072 samples, 0.03%)</title><rect x="452.7" y="189" width="0.3" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="455.66" y="199.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt;::operator= (19,057,171 samples, 0.06%)</title><rect x="13.2" y="173" width="0.7" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="16.20" y="183.5" ></text>
+</g>
+<g >
+<title>dBodySetQuaternion@plt (3,009,027 samples, 0.01%)</title><rect x="474.3" y="189" width="0.1" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="477.33" y="199.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPoses::operator= (31,093,279 samples, 0.10%)</title><rect x="14.0" y="237" width="1.2" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="16.99" y="247.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::EntityComponentManager::SetAllComponentsUnchanged (4,012,036 samples, 0.01%)</title><rect x="10.1" y="397" width="0.1" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="13.08" y="407.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics (513,540,608 samples, 1.71%)</title><rect x="1167.0" y="349" width="20.2" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="1169.99" y="359.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::systems::PhysicsPrivate::CreateJointEntities (3,009,027 samples, 0.01%)</title><rect x="15.4" y="333" width="0.2" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="18.45" y="343.5" ></text>
+</g>
+<g >
+<title>bool gz::math::v10::equal&lt;double&gt; (7,021,063 samples, 0.02%)</title><rect x="1122.3" y="285" width="0.2" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="1125.27" y="295.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned_erms (6,018,054 samples, 0.02%)</title><rect x="119.8" y="269" width="0.2" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="122.77" y="279.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_iterator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt;::emplace_hint&lt;std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (4,012,036 samples, 0.01%)</title><rect x="15.8" y="285" width="0.2" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="18.84" y="295.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::SimulationRunner::Run (29,946,839,713 samples, 99.87%)</title><rect x="10.1" y="413" width="1178.4" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="13.08" y="423.5" >gz::sim::v11::SimulationRunner::Run</text>
+</g>
+<g >
+<title>__frexp (16,048,144 samples, 0.05%)</title><rect x="799.4" y="205" width="0.6" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="802.36" y="215.5" ></text>
+</g>
+<g >
+<title>dart::collision::CollisionObject::getTransform (293,881,637 samples, 0.98%)</title><rect x="474.4" y="189" width="11.6" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="477.45" y="199.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;gz::physics::CompositeData::TypeName, std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt;, std::_Select1st&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt;::_M_get_node (4,012,036 samples, 0.01%)</title><rect x="15.8" y="221" width="0.2" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="18.84" y="231.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::aligned_free (46,138,414 samples, 0.15%)</title><rect x="92.6" y="221" width="1.8" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="95.61" y="231.5" ></text>
+</g>
+<g >
+<title>std::enable_if&lt;std::is_constructible&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt;, std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt;::value, std::pair&lt;std::_Rb_tree_iterator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, bool&gt; &gt;::type std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt;::insert&lt;std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (4,012,036 samples, 0.01%)</title><rect x="1166.4" y="253" width="0.2" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="1169.40" y="263.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPoses::operator= (19,057,171 samples, 0.06%)</title><rect x="13.2" y="189" width="0.7" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="16.20" y="199.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::Assignment&lt;Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt;, Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt;, Eigen::internal::assign_op&lt;double, double&gt;, Eigen::internal::Dense2Dense, void&gt;::run (166,499,494 samples, 0.56%)</title><rect x="1106.6" y="221" width="6.5" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="1109.56" y="231.5" ></text>
+</g>
+<g >
+<title>dxHashSpace::collide (9,619,859,319 samples, 32.08%)</title><rect x="542.3" y="221" width="378.5" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="545.26" y="231.5" >dxHashSpace::collide</text>
+</g>
+<g >
+<title>checked_request2size (14,042,126 samples, 0.05%)</title><rect x="887.1" y="157" width="0.5" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="890.07" y="167.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::getDof (1,256,770,277 samples, 4.19%)</title><rect x="230.0" y="285" width="49.4" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="232.97" y="295.5" >dart..</text>
+</g>
+<g >
+<title>__GI___libc_malloc (989,969,883 samples, 3.30%)</title><rect x="1127.4" y="77" width="39.0" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="1130.40" y="87.5" >__G..</text>
+</g>
+<g >
+<title>gz::physics::dartsim::BitmaskContactFilter::ignoresCollision (2,819,458,299 samples, 9.40%)</title><rect x="647.4" y="189" width="110.9" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="650.36" y="199.5" >gz::physics::..</text>
+</g>
+<g >
+<title>std::unordered_map&lt;unsigned long, std::tuple&lt;gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::GravityFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::RayIntersectionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::BatchRayIntersectionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::SetContactPropertiesCallbackFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::NestedModelFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionDetectorFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::SolverFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::WorldModelFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionPairMaxContactsFeatureList&gt; &gt; &gt;, std::hash&lt;unsigned long&gt;, std::equal_to&lt;unsigned long&gt;, std::allocator&lt;std::pair&lt;unsigned long const, std::tuple&lt;gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::GravityFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::RayIntersectionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::BatchRayIntersectionFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::SetContactPropertiesCallbackFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::NestedModelFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionDetectorFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::SolverFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::WorldModelFeatureList&gt; &gt;, gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::CollisionPairMaxContactsFeatureList&gt; &gt; &gt; &gt; &gt; &gt;::find (5,015,045 samples, 0.02%)</title><rect x="1167.1" y="285" width="0.2" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="1170.15" y="295.5" ></text>
+</g>
+<g >
+<title>dBodySetPosition (77,231,693 samples, 0.26%)</title><rect x="449.6" y="189" width="3.1" height="15.0" fill="rgb(248,199,47)" rx="2" ry="2" />
+<text  x="452.62" y="199.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::SkeletonRefCountingBase::decrementReferenceCount (176,529,584 samples, 0.59%)</title><rect x="749.7" y="157" width="6.9" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="752.67" y="167.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;, Eigen::internal::assign_op&lt;double, double&gt;, 0&gt;::assignPacket&lt;16, 16, double __vector (40,120,360 samples, 0.13%)</title><rect x="1036.2" y="157" width="1.6" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
+<text  x="1039.22" y="167.5" ></text>
+</g>
+<g >
+<title>tcache_get_n (24,072,216 samples, 0.08%)</title><rect x="118.8" y="237" width="1.0" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="121.82" y="247.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; std::copy&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; &gt; (12,036,108 samples, 0.04%)</title><rect x="12.7" y="157" width="0.5" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="15.68" y="167.5" ></text>
+</g>
+<g >
+<title>gz::physics::MakeCloneable&lt;gz::physics::WorldPoses&gt;::MakeCloneable (1,088,264,765 samples, 3.63%)</title><rect x="1123.5" y="237" width="42.9" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="1126.53" y="247.5" >gz::..</text>
+</g>
+<g >
+<title>dart::collision::CollisionObject::getShapeFrame (13,039,117 samples, 0.04%)</title><rect x="661.3" y="157" width="0.5" height="15.0" fill="rgb(236,146,35)" rx="2" ry="2" />
+<text  x="664.34" y="167.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::redux_novec_unroller&lt;Eigen::internal::scalar_sum_op&lt;double, double&gt;, Eigen::internal::redux_evaluator&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt;, 2, 1&gt;::run (76,228,684 samples, 0.25%)</title><rect x="1117.3" y="141" width="3.0" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="1120.26" y="151.5" ></text>
+</g>
+<g >
+<title>gz::physics::MakeCloneable&lt;gz::physics::WorldPoses&gt;::Copy (33,099,297 samples, 0.11%)</title><rect x="13.9" y="253" width="1.3" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="16.95" y="263.5" ></text>
+</g>
+<g >
+<title>__GI___libc_malloc (53,159,477 samples, 0.18%)</title><rect x="117.7" y="269" width="2.1" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="120.67" y="279.5" ></text>
+</g>
+<g >
+<title>gz::transport::v16::Publisher::Topic[abi:cxx11] (7,021,063 samples, 0.02%)</title><rect x="11.1" y="349" width="0.2" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="14.07" y="359.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::getSkeleton (679,037,093 samples, 2.26%)</title><rect x="661.8" y="157" width="26.8" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
+<text  x="664.85" y="167.5" >d..</text>
+</g>
+<g >
+<title>non-virtual thunk to dart::dynamics::ShapeNode::asShapeNode (17,051,153 samples, 0.06%)</title><rect x="757.6" y="173" width="0.7" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="760.64" y="183.5" ></text>
+</g>
+<g >
+<title>free@plt (5,015,045 samples, 0.02%)</title><rect x="94.2" y="205" width="0.2" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="97.23" y="215.5" ></text>
+</g>
+<g >
+<title>__GI___libc_free (942,828,460 samples, 3.14%)</title><rect x="762.3" y="205" width="37.1" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="765.26" y="215.5" >__G..</text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::getNumDofs (129,388,161 samples, 0.43%)</title><rect x="279.4" y="285" width="5.1" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="282.42" y="295.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned_erms (19,057,171 samples, 0.06%)</title><rect x="13.2" y="77" width="0.7" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="16.20" y="87.5" ></text>
+</g>
+<g >
+<title>gz::physics::SpecifyData&lt;gz::physics::RequireData&lt;gz::physics::WorldPoses&gt;, gz::physics::ExpectData&lt;gz::physics::ChangedWorldPoses, gz::physics::Contacts, gz::physics::JointPositions&gt; &gt;::operator= (87,261,783 samples, 0.29%)</title><rect x="11.9" y="349" width="3.4" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="14.86" y="359.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt; &gt;, Eigen::internal::assign_op&lt;double, double&gt;, 0&gt;::assignCoeff (166,499,494 samples, 0.56%)</title><rect x="1106.6" y="141" width="6.5" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1109.56" y="151.5" ></text>
+</g>
+<g >
+<title>gz::physics::ExpectData&lt;std::chrono::duration&lt;long, std::ratio&lt;1l, 1000000000l&gt; &gt; &gt;::ExpectData (4,012,036 samples, 0.01%)</title><rect x="15.8" y="317" width="0.2" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="18.84" y="327.5" ></text>
+</g>
+<g >
+<title>_start (29,946,839,713 samples, 99.87%)</title><rect x="10.1" y="493" width="1178.4" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="13.08" y="503.5" >_start</text>
+</g>
+<g >
+<title>all (29,985,957,064 samples, 100%)</title><rect x="10.0" y="509" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="519.5" ></text>
+</g>
+<g >
+<title>__GI___libc_malloc (1,622,868,562 samples, 5.41%)</title><rect x="856.6" y="189" width="63.8" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="859.56" y="199.5" >__GI___..</text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; std::copy&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; &gt; (17,051,153 samples, 0.06%)</title><rect x="11.9" y="189" width="0.7" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="14.89" y="199.5" ></text>
+</g>
+<g >
+<title>gz::physics::dartsim::SimulationFeatures::WorldForwardStep (26,005,014,343 samples, 86.72%)</title><rect x="16.2" y="317" width="1023.3" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
+<text  x="19.20" y="327.5" >gz::physics::dartsim::SimulationFeatures::WorldForwardStep</text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (34,102,306 samples, 0.11%)</title><rect x="1020.6" y="237" width="1.4" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1023.63" y="247.5" ></text>
+</g>
+<g >
+<title>std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;::operator (9,027,081 samples, 0.03%)</title><rect x="1186.3" y="173" width="0.4" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1189.33" y="183.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::isMobile (34,102,306 samples, 0.11%)</title><rect x="748.3" y="157" width="1.4" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="751.33" y="167.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__copy_move_a1&lt;false, gz::physics::WorldPose const*, gz::physics::WorldPose*&gt; (12,036,108 samples, 0.04%)</title><rect x="12.7" y="125" width="0.5" height="15.0" fill="rgb(231,124,29)" rx="2" ry="2" />
+<text  x="15.68" y="135.5" ></text>
+</g>
+<g >
+<title>CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt;, const std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt;&amp;&gt; (20,060,180 samples, 0.07%)</title><rect x="13.2" y="237" width="0.7" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="16.16" y="247.5" ></text>
+</g>
+<g >
+<title>Eigen::Quaternion&lt;double, 0&gt;::Quaternion&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; &gt; (182,547,638 samples, 0.61%)</title><rect x="1113.1" y="285" width="7.2" height="15.0" fill="rgb(253,225,53)" rx="2" ry="2" />
+<text  x="1116.11" y="295.5" ></text>
+</g>
+<g >
+<title>gz::physics::SpecifyData&lt;gz::physics::ExpectData&lt;gz::physics::ChangedWorldPoses&gt;, gz::physics::ExpectData&lt;gz::physics::Contacts, gz::physics::JointPositions&gt; &gt;::operator= (53,159,477 samples, 0.18%)</title><rect x="11.9" y="317" width="2.0" height="15.0" fill="rgb(252,220,52)" rx="2" ry="2" />
+<text  x="14.86" y="327.5" ></text>
+</g>
+<g >
+<title>std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, void*, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt; &gt;::find (5,015,045 samples, 0.02%)</title><rect x="16.0" y="253" width="0.2" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="19.00" y="263.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__uninitialized_copy&lt;false&gt;::__uninit_copy&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, gz::physics::WorldPose*&gt; (97,291,873 samples, 0.32%)</title><rect x="1123.6" y="157" width="3.8" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="1126.57" y="167.5" ></text>
+</g>
+<g >
+<title>bool gz::math::v10::equal&lt;double&gt; (3,009,027 samples, 0.01%)</title><rect x="1123.0" y="285" width="0.1" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="1126.02" y="295.5" ></text>
+</g>
+<g >
+<title>gz::physics::ExpectData&lt;gz::physics::ChangedWorldPoses, gz::physics::Contacts, gz::physics::JointPositions&gt;::operator= (53,159,477 samples, 0.18%)</title><rect x="11.9" y="333" width="2.0" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="14.86" y="343.5" ></text>
+</g>
+<g >
+<title>dxHashSpace::cleanGeoms (1,008,024,045 samples, 3.36%)</title><rect x="815.0" y="205" width="39.6" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="817.95" y="215.5" >dxH..</text>
+</g>
+<g >
+<title>Eigen::internal::evaluator&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt;::coeff (76,228,684 samples, 0.25%)</title><rect x="1117.3" y="109" width="3.0" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="1120.26" y="119.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;gz::physics::CompositeData::TypeName, std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt;, std::_Select1st&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt;::_M_erase (3,009,027 samples, 0.01%)</title><rect x="1166.8" y="333" width="0.1" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="1169.79" y="343.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::conditional_aligned_delete_auto&lt;double, true&gt; (46,138,414 samples, 0.15%)</title><rect x="92.6" y="253" width="1.8" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="95.61" y="263.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::SimulationRunner::PublishStats (16,048,144 samples, 0.05%)</title><rect x="10.8" y="381" width="0.6" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="13.79" y="391.5" ></text>
+</g>
+<g >
+<title>free_perturb (6,018,054 samples, 0.02%)</title><rect x="799.1" y="173" width="0.3" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="802.13" y="183.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__copy_move_a2&lt;false, gz::physics::WorldPose const*, gz::physics::WorldPose*&gt; (12,036,108 samples, 0.04%)</title><rect x="12.7" y="109" width="0.5" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="15.68" y="119.5" ></text>
+</g>
+<g >
+<title>gz::physics::CompositeData::Copy (1,100,300,873 samples, 3.67%)</title><rect x="1123.3" y="301" width="43.3" height="15.0" fill="rgb(217,55,13)" rx="2" ry="2" />
+<text  x="1126.26" y="311.5" >gz::..</text>
+</g>
+<g >
+<title>Eigen::PlainObjectBase&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;::~PlainObjectBase (46,138,414 samples, 0.15%)</title><rect x="92.6" y="285" width="1.8" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
+<text  x="95.61" y="295.5" ></text>
+</g>
+<g >
+<title>__GI___libc_malloc (4,012,036 samples, 0.01%)</title><rect x="15.8" y="157" width="0.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="18.84" y="167.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::call_assignment_no_alias&lt;Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt;, Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt;, Eigen::internal::assign_op&lt;double, double&gt; &gt; (166,499,494 samples, 0.56%)</title><rect x="1106.6" y="237" width="6.5" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="1109.56" y="247.5" ></text>
+</g>
+<g >
+<title>tcache_get_n (3,009,027 samples, 0.01%)</title><rect x="920.3" y="157" width="0.1" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="923.30" y="167.5" ></text>
+</g>
+<g >
+<title>tcache_put (4,012,036 samples, 0.01%)</title><rect x="94.1" y="173" width="0.1" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="97.07" y="183.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::call_dense_assignment_loop&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, Eigen::internal::assign_op&lt;double, double&gt; &gt; (98,294,882 samples, 0.33%)</title><rect x="1035.6" y="189" width="3.9" height="15.0" fill="rgb(216,50,12)" rx="2" ry="2" />
+<text  x="1038.59" y="199.5" ></text>
+</g>
+<g >
+<title>__memcmp_avx2_movbe (4,012,036 samples, 0.01%)</title><rect x="1186.3" y="109" width="0.2" height="15.0" fill="rgb(224,91,21)" rx="2" ry="2" />
+<text  x="1189.33" y="119.5" ></text>
+</g>
+<g >
+<title>_int_free (26,078,234 samples, 0.09%)</title><rect x="93.2" y="189" width="1.0" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="96.20" y="199.5" ></text>
+</g>
+<g >
+<title>gz::physics::Gravity::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt; &gt;* gz::physics::Entity&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::GravityFeatureList&gt;::Interface&lt;gz::physics::Gravity&gt; (9,027,081 samples, 0.03%)</title><rect x="1186.3" y="285" width="0.4" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1189.33" y="295.5" ></text>
+</g>
+<g >
+<title>dart::collision::OdeCollisionDetector::collide (12,812,436,966 samples, 42.73%)</title><rect x="416.6" y="237" width="504.2" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="419.62" y="247.5" >dart::collision::OdeCollisionDetector::collide</text>
+</g>
+<g >
+<title>std::enable_if&lt;std::is_constructible&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt;, std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt;::value, std::pair&lt;std::_Rb_tree_iterator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, bool&gt; &gt;::type std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt;::insert&lt;std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (4,012,036 samples, 0.01%)</title><rect x="15.8" y="301" width="0.2" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="18.84" y="311.5" ></text>
+</g>
+<g >
+<title>void gz::physics::CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt; const&amp;&gt; (18,054,162 samples, 0.06%)</title><rect x="11.9" y="253" width="0.7" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="14.86" y="263.5" ></text>
+</g>
+<g >
+<title>void gz::physics::StandardDataCreate&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt; (1,100,300,873 samples, 3.67%)</title><rect x="1123.3" y="269" width="43.3" height="15.0" fill="rgb(226,100,23)" rx="2" ry="2" />
+<text  x="1126.26" y="279.5" >void..</text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__do_uninit_copy&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, gz::physics::WorldPose*&gt; (31,093,279 samples, 0.10%)</title><rect x="14.0" y="141" width="1.2" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="16.99" y="151.5" ></text>
+</g>
+<g >
+<title>frexp@plt (3,009,027 samples, 0.01%)</title><rect x="854.6" y="205" width="0.1" height="15.0" fill="rgb(233,129,30)" rx="2" ry="2" />
+<text  x="857.62" y="215.5" ></text>
+</g>
+<g >
+<title>__ldexp (27,081,243 samples, 0.09%)</title><rect x="800.4" y="189" width="1.1" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="803.39" y="199.5" ></text>
+</g>
+<g >
+<title>gz::physics::ExpectData&lt;gz::physics::ChangedWorldPoses&gt;::operator= (19,057,171 samples, 0.06%)</title><rect x="11.9" y="301" width="0.7" height="15.0" fill="rgb(243,176,42)" rx="2" ry="2" />
+<text  x="14.86" y="311.5" ></text>
+</g>
+<g >
+<title>_int_malloc (994,984,928 samples, 3.32%)</title><rect x="881.1" y="173" width="39.2" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="884.15" y="183.5" >_in..</text>
+</g>
+<g >
+<title>gz::physics::ExpectData&lt;gz::physics::JointPositions&gt;::operator= (20,060,180 samples, 0.07%)</title><rect x="13.2" y="269" width="0.7" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="16.16" y="279.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::mapbase_evaluator&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt;, Eigen::Matrix&lt;double, 3, 3, 0, 3, 3&gt; &gt;::coeff (76,228,684 samples, 0.25%)</title><rect x="1117.3" y="93" width="3.0" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="1120.26" y="103.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::call_assignment&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, Eigen::internal::assign_op&lt;double, double&gt; &gt; (98,294,882 samples, 0.33%)</title><rect x="1035.6" y="237" width="3.9" height="15.0" fill="rgb(253,220,52)" rx="2" ry="2" />
+<text  x="1038.59" y="247.5" ></text>
+</g>
+<g >
+<title>void std::_Construct&lt;gz::physics::WorldPose, gz::physics::WorldPose const&amp;&gt; (90,270,810 samples, 0.30%)</title><rect x="1123.8" y="125" width="3.6" height="15.0" fill="rgb(235,140,33)" rx="2" ry="2" />
+<text  x="1126.85" y="135.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__uninitialized_copy_a&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, gz::physics::WorldPose*, gz::physics::WorldPose&gt; (97,291,873 samples, 0.32%)</title><rect x="1123.6" y="189" width="3.8" height="15.0" fill="rgb(208,14,3)" rx="2" ry="2" />
+<text  x="1126.57" y="199.5" ></text>
+</g>
+<g >
+<title>operator new (19,057,171 samples, 0.06%)</title><rect x="761.5" y="189" width="0.8" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="764.51" y="199.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; std::__copy_move_a&lt;false, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; &gt; (19,057,171 samples, 0.06%)</title><rect x="13.2" y="141" width="0.7" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="16.20" y="151.5" ></text>
+</g>
+<g >
+<title>dart::collision::BodyNodeCollisionFilter::ignoresCollision (2,636,910,661 samples, 8.79%)</title><rect x="653.2" y="173" width="103.7" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="656.17" y="183.5" >dart::collis..</text>
+</g>
+<g >
+<title>gz::math::v10::Vector3&lt;double&gt;::Equal (15,045,135 samples, 0.05%)</title><rect x="1122.5" y="301" width="0.6" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="1125.55" y="311.5" ></text>
+</g>
+<g >
+<title>void gz::physics::CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt; const&amp;&gt; (33,099,297 samples, 0.11%)</title><rect x="13.9" y="269" width="1.3" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="16.95" y="279.5" ></text>
+</g>
+<g >
+<title>_int_free_maybe_consolidate (453,360,068 samples, 1.51%)</title><rect x="781.3" y="173" width="17.8" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="784.29" y="183.5" ></text>
+</g>
+<g >
+<title>gz::math::v10::Quaternion&lt;double&gt;::Equal (12,036,108 samples, 0.04%)</title><rect x="1122.1" y="301" width="0.4" height="15.0" fill="rgb(215,48,11)" rx="2" ry="2" />
+<text  x="1125.07" y="311.5" ></text>
+</g>
+<g >
+<title>gz::physics::ExpectData&lt;gz::physics::ApplyExternalForceTorques, gz::physics::ApplyGeneralizedForces, gz::physics::VelocityControlCommands, gz::physics::ServoControlCommands, std::chrono::duration&lt;long, std::ratio&lt;1l, 1000000000l&gt; &gt; &gt;::ExpectData (6,018,054 samples, 0.02%)</title><rect x="15.8" y="333" width="0.2" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="18.76" y="343.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__copy_move_a1&lt;false, gz::physics::WorldPose const*, gz::physics::WorldPose*&gt; (17,051,153 samples, 0.06%)</title><rect x="11.9" y="157" width="0.7" height="15.0" fill="rgb(231,124,29)" rx="2" ry="2" />
+<text  x="14.89" y="167.5" ></text>
+</g>
+<g >
+<title>std::enable_if&lt;__and_v&lt;std::__not_&lt;std::is_same&lt;std::optional&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;, std::remove_cv&lt;std::remove_reference&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; const&amp;&gt;::type&gt;::type&gt; &gt;, std::__not_&lt;std::__and_&lt;std::is_scalar&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;, std::is_same&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, std::decay&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; const&amp;&gt;::type&gt; &gt; &gt;, std::is_constructible&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; const&amp;&gt;, std::is_assignable&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;&amp;, Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; const&amp;&gt; &gt;, std::optional&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;&amp;&gt;::type std::optional&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;::operator=&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; const&amp;&gt; (343,029,078 samples, 1.14%)</title><rect x="1026.0" y="301" width="13.5" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="1028.96" y="311.5" ></text>
+</g>
+<g >
+<title>std::_Vector_base&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt;::_M_create_storage (989,969,883 samples, 3.30%)</title><rect x="1127.4" y="173" width="39.0" height="15.0" fill="rgb(246,193,46)" rx="2" ry="2" />
+<text  x="1130.40" y="183.5" >std..</text>
+</g>
+<g >
+<title>Eigen::internal::dense_assignment_loop&lt;Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt; &gt;, Eigen::internal::assign_op&lt;double, double&gt;, 0&gt;, 3, 2&gt;::run (166,499,494 samples, 0.56%)</title><rect x="1106.6" y="189" width="6.5" height="15.0" fill="rgb(219,66,15)" rx="2" ry="2" />
+<text  x="1109.56" y="199.5" ></text>
+</g>
+<g >
+<title>Eigen::Transform&lt;double, 3, 1, 0&gt;::linear (31,093,279 samples, 0.10%)</title><rect x="1120.3" y="285" width="1.2" height="15.0" fill="rgb(215,49,11)" rx="2" ry="2" />
+<text  x="1123.30" y="295.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::call_assignment_no_alias&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, Eigen::internal::assign_op&lt;double, double&gt; &gt; (98,294,882 samples, 0.33%)</title><rect x="1035.6" y="221" width="3.9" height="15.0" fill="rgb(225,96,23)" rx="2" ry="2" />
+<text  x="1038.59" y="231.5" ></text>
+</g>
+<g >
+<title>gz::physics::CompositeData::CompositeData (1,100,300,873 samples, 3.67%)</title><rect x="1123.3" y="317" width="43.3" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="1126.26" y="327.5" >gz::..</text>
+</g>
+<g >
+<title>gz::physics::ExpectData&lt;gz::physics::WorldPoses&gt;::operator= (34,102,306 samples, 0.11%)</title><rect x="13.9" y="317" width="1.4" height="15.0" fill="rgb(248,202,48)" rx="2" ry="2" />
+<text  x="16.95" y="327.5" ></text>
+</g>
+<g >
+<title>void std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_construct&lt;char*&gt; (4,012,036 samples, 0.01%)</title><rect x="10.9" y="317" width="0.2" height="15.0" fill="rgb(220,70,16)" rx="2" ry="2" />
+<text  x="13.91" y="327.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::evaluator&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt;::coeff (3,009,027 samples, 0.01%)</title><rect x="1117.1" y="109" width="0.2" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="1120.14" y="119.5" ></text>
+</g>
+<g >
+<title>dart::constraint::ConstraintSolver::updateConstraints (3,009,027 samples, 0.01%)</title><rect x="1189.1" y="493" width="0.1" height="15.0" fill="rgb(239,160,38)" rx="2" ry="2" />
+<text  x="1192.09" y="503.5" ></text>
+</g>
+<g >
+<title>__GI___libc_free (40,120,360 samples, 0.13%)</title><rect x="92.7" y="205" width="1.5" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="95.65" y="215.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt;::operator= (17,051,153 samples, 0.06%)</title><rect x="11.9" y="205" width="0.7" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="14.89" y="215.5" ></text>
+</g>
+<g >
+<title>Eigen::PlainObjectBase&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;::resize (4,012,036 samples, 0.01%)</title><rect x="1039.3" y="157" width="0.2" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="1042.30" y="167.5" ></text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (832,497,470 samples, 2.78%)</title><rect x="305.5" y="253" width="32.7" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="308.47" y="263.5" >[l..</text>
+</g>
+<g >
+<title>dGeomMoved (49,147,441 samples, 0.16%)</title><rect x="450.7" y="173" width="2.0" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="453.72" y="183.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::systems::PhysicsPrivate::Step (29,255,766,512 samples, 97.56%)</title><rect x="15.7" y="349" width="1151.3" height="15.0" fill="rgb(218,64,15)" rx="2" ry="2" />
+<text  x="18.72" y="359.5" >gz::sim::v11::systems::PhysicsPrivate::Step</text>
+</g>
+<g >
+<title>__GI___libc_malloc (18,054,162 samples, 0.06%)</title><rect x="761.6" y="173" width="0.7" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="764.55" y="183.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::dirtySupportPolygon (5,015,045 samples, 0.02%)</title><rect x="1186.1" y="269" width="0.2" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="1189.09" y="279.5" ></text>
+</g>
+<g >
+<title>gz::physics::ForwardStep::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt; &gt;* gz::plugin::Plugin::QueryInterface&lt;gz::physics::ForwardStep::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt; &gt; &gt; (5,015,045 samples, 0.02%)</title><rect x="16.0" y="285" width="0.2" height="15.0" fill="rgb(240,165,39)" rx="2" ry="2" />
+<text  x="19.00" y="295.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned_erms (41,123,369 samples, 0.14%)</title><rect x="759.4" y="189" width="1.6" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="762.38" y="199.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt; &gt;::find (5,015,045 samples, 0.02%)</title><rect x="16.0" y="237" width="0.2" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="19.00" y="247.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::SkeletonRefCountingBase::incrementReferenceCount (849,548,623 samples, 2.83%)</title><rect x="714.9" y="141" width="33.4" height="15.0" fill="rgb(226,101,24)" rx="2" ry="2" />
+<text  x="717.90" y="151.5" >da..</text>
+</g>
+<g >
+<title>std::allocator_traits&lt;std::allocator&lt;std::_Rb_tree_node&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt; &gt;::allocate (4,012,036 samples, 0.01%)</title><rect x="15.8" y="205" width="0.2" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="18.84" y="215.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__copy_move_a2&lt;false, gz::physics::WorldPose const*, gz::physics::WorldPose*&gt; (17,051,153 samples, 0.06%)</title><rect x="11.9" y="141" width="0.7" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="14.89" y="151.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPoses::WorldPoses (1,088,264,765 samples, 3.63%)</title><rect x="1123.5" y="221" width="42.9" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="1126.53" y="231.5" >gz::..</text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned_erms (17,051,153 samples, 0.06%)</title><rect x="11.9" y="109" width="0.7" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="14.89" y="119.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned_erms (12,036,108 samples, 0.04%)</title><rect x="12.7" y="77" width="0.5" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="15.68" y="87.5" ></text>
+</g>
+<g >
+<title>Eigen::MatrixBase&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; &gt;::trace (80,240,720 samples, 0.27%)</title><rect x="1117.1" y="237" width="3.2" height="15.0" fill="rgb(249,206,49)" rx="2" ry="2" />
+<text  x="1120.14" y="247.5" ></text>
+</g>
+<g >
+<title>unlink_chunk (36,108,324 samples, 0.12%)</title><rect x="797.7" y="141" width="1.4" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="800.71" y="151.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::uninitialized_copy&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, gz::physics::WorldPose*&gt; (31,093,279 samples, 0.10%)</title><rect x="14.0" y="173" width="1.2" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="16.99" y="183.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;gz::physics::CompositeData::TypeName, std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt;, std::_Select1st&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt;::_M_erase (4,012,036 samples, 0.01%)</title><rect x="1187.8" y="349" width="0.1" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="1190.75" y="359.5" ></text>
+</g>
+<g >
+<title>dart::collision::detail::OdeGeom::updateEngineData (9,027,081 samples, 0.03%)</title><rect x="486.0" y="189" width="0.4" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="489.01" y="199.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::isMobile (94,282,846 samples, 0.31%)</title><rect x="1022.1" y="285" width="3.7" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="1025.05" y="295.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::clearConstraintImpulses (14,042,126 samples, 0.05%)</title><rect x="1189.3" y="493" width="0.5" height="15.0" fill="rgb(223,82,19)" rx="2" ry="2" />
+<text  x="1192.29" y="503.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__copy_move&lt;false, true, std::random_access_iterator_tag&gt;::__copy_m&lt;gz::physics::WorldPose const, gz::physics::WorldPose&gt; (17,051,153 samples, 0.06%)</title><rect x="11.9" y="125" width="0.7" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="14.89" y="135.5" ></text>
+</g>
+<g >
+<title>std::_Vector_base&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt;::_M_allocate (989,969,883 samples, 3.30%)</title><rect x="1127.4" y="141" width="39.0" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="1130.40" y="151.5" >std..</text>
+</g>
+<g >
+<title>std::allocator_traits&lt;std::allocator&lt;gz::physics::WorldPose&gt; &gt;::allocate (989,969,883 samples, 3.30%)</title><rect x="1127.4" y="125" width="39.0" height="15.0" fill="rgb(215,49,11)" rx="2" ry="2" />
+<text  x="1130.40" y="135.5" >std..</text>
+</g>
+<g >
+<title>Each&lt;gz::sim::v11::components::Component&lt;gz::math::v10::Vector3&lt;double&gt;, gz::sim::v11::components::GravityTag, gz::sim::v11::serializers::DefaultSerializer&lt;gz::math::v10::Vector3&lt;double&gt; &gt; &gt;, gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics (501,504,500 samples, 1.67%)</title><rect x="1167.0" y="333" width="19.8" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="1170.03" y="343.5" ></text>
+</g>
+<g >
+<title>Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;::operator= (98,294,882 samples, 0.33%)</title><rect x="1035.6" y="285" width="3.9" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="1038.59" y="295.5" ></text>
+</g>
+<g >
+<title>gz::physics::dartsim::SimulationFeatures::WorldForwardStep (40,120,360 samples, 0.13%)</title><rect x="1036.2" y="93" width="1.6" height="15.0" fill="rgb(222,79,19)" rx="2" ry="2" />
+<text  x="1039.22" y="103.5" ></text>
+</g>
+<g >
+<title>gz::physics::Gravity::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::GravityFeatureList&gt;::SetGravity (10,030,090 samples, 0.03%)</title><rect x="1186.3" y="301" width="0.4" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="1189.29" y="311.5" ></text>
+</g>
+<g >
+<title>dart::constraint::ConstraintSolver::solve (18,739,217,147 samples, 62.49%)</title><rect x="284.6" y="285" width="737.4" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="287.59" y="295.5" >dart::constraint::ConstraintSolver::solve</text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::setGravity (477,432,284 samples, 1.59%)</title><rect x="1167.5" y="285" width="18.8" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1170.50" y="295.5" ></text>
+</g>
+<g >
+<title>dGeomMoved (15,045,135 samples, 0.05%)</title><rect x="454.0" y="173" width="0.6" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="456.96" y="183.5" ></text>
+</g>
+<g >
+<title>void Eigen::PlainObjectBase&lt;Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt; &gt;::_init1&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt;, Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt; &gt; (166,499,494 samples, 0.56%)</title><rect x="1106.6" y="269" width="6.5" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="1109.56" y="279.5" ></text>
+</g>
+<g >
+<title>std::mutex::lock (3,009,027 samples, 0.01%)</title><rect x="10.6" y="349" width="0.1" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="13.63" y="359.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::setColliding (6,018,054 samples, 0.02%)</title><rect x="968.3" y="253" width="0.3" height="15.0" fill="rgb(218,62,15)" rx="2" ry="2" />
+<text  x="971.34" y="263.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__uninitialized_copy_a&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, gz::physics::WorldPose*, gz::physics::WorldPose&gt; (31,093,279 samples, 0.10%)</title><rect x="14.0" y="189" width="1.2" height="15.0" fill="rgb(208,14,3)" rx="2" ry="2" />
+<text  x="16.99" y="199.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::mapbase_evaluator&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt;, Eigen::Matrix&lt;double, 3, 3, 0, 3, 3&gt; &gt;::coeff (3,009,027 samples, 0.01%)</title><rect x="1117.1" y="93" width="0.2" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="1120.14" y="103.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::dense_assignment_loop&lt;Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;, Eigen::internal::assign_op&lt;double, double&gt;, 0&gt;, 3, 0&gt;::run (56,168,504 samples, 0.19%)</title><rect x="1035.6" y="173" width="2.2" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="1038.59" y="183.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::systems::Physics::Update (29,892,677,227 samples, 99.69%)</title><rect x="11.6" y="365" width="1176.3" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="14.58" y="375.5" >gz::sim::v11::systems::Physics::Update</text>
+</g>
+<g >
+<title>dxBox::computeAABB (57,171,513 samples, 0.19%)</title><rect x="818.1" y="189" width="2.2" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="821.07" y="199.5" ></text>
+</g>
+<g >
+<title>dBodySetQuaternion (542,627,869 samples, 1.81%)</title><rect x="453.0" y="189" width="21.3" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="455.97" y="199.5" >d..</text>
+</g>
+<g >
+<title>std::char_traits&lt;char&gt;::compare (4,012,036 samples, 0.01%)</title><rect x="1186.3" y="125" width="0.2" height="15.0" fill="rgb(243,176,42)" rx="2" ry="2" />
+<text  x="1189.33" y="135.5" ></text>
+</g>
+<g >
+<title>non-virtual thunk to dart::dynamics::ShapeNode::asShapeNode (8,024,072 samples, 0.03%)</title><rect x="756.6" y="157" width="0.3" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="759.62" y="167.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt;::vector (1,087,261,756 samples, 3.63%)</title><rect x="1123.6" y="205" width="42.8" height="15.0" fill="rgb(250,211,50)" rx="2" ry="2" />
+<text  x="1126.57" y="215.5" >std:..</text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__uninitialized_copy&lt;false&gt;::__uninit_copy&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, gz::physics::WorldPose*&gt; (31,093,279 samples, 0.10%)</title><rect x="14.0" y="157" width="1.2" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="16.99" y="167.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;gz::physics::CompositeData::TypeName, std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt;, std::_Select1st&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt;::_Auto_node::_Auto_node&lt;std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (4,012,036 samples, 0.01%)</title><rect x="15.8" y="253" width="0.2" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="18.84" y="263.5" ></text>
+</g>
+<g >
+<title>gz::physics::CompositeData::Copy (34,102,306 samples, 0.11%)</title><rect x="13.9" y="301" width="1.4" height="15.0" fill="rgb(217,55,13)" rx="2" ry="2" />
+<text  x="16.95" y="311.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator_base&lt;std::pair&lt;unsigned long const, std::shared_ptr&lt;gz::physics::dartsim::LinkInfo&gt; &gt;, false&gt;::_M_incr (3,009,027 samples, 0.01%)</title><rect x="1025.8" y="285" width="0.2" height="15.0" fill="rgb(207,12,2)" rx="2" ry="2" />
+<text  x="1028.84" y="295.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__copy_move_a2&lt;false, gz::physics::WorldPose const*, gz::physics::WorldPose*&gt; (19,057,171 samples, 0.06%)</title><rect x="13.2" y="109" width="0.7" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="16.20" y="119.5" ></text>
+</g>
+<g >
+<title>void gz::physics::CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt; const&amp;&gt; (20,060,180 samples, 0.07%)</title><rect x="13.2" y="221" width="0.7" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="16.16" y="231.5" ></text>
+</g>
+<g >
+<title>dart::collision::CollisionGroup::updateSkeletonSource (1,956,870,559 samples, 6.53%)</title><rect x="339.5" y="221" width="77.0" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="342.54" y="231.5" >dart::co..</text>
+</g>
+<g >
+<title>auto&amp; entt::basic_registry&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt;::assure&lt;gz::sim::v11::components::Component&lt;std::vector&lt;double, std::allocator&lt;double&gt; &gt;, gz::sim::v11::components::JointPositionResetTag, gz::sim::v11::serializers::VectorDoubleSerializer&gt; &gt; (3,009,027 samples, 0.01%)</title><rect x="1187.4" y="301" width="0.2" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="1190.43" y="311.5" ></text>
+</g>
+<g >
+<title>_int_free (885,656,947 samples, 2.95%)</title><rect x="764.5" y="189" width="34.9" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="767.51" y="199.5" >_i..</text>
+</g>
+<g >
+<title>entt::dense_map&lt;unsigned long, std::shared_ptr&lt;entt::basic_sparse_set&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; &gt;, entt::identity, std::equal_to&lt;void&gt;, std::allocator&lt;std::pair&lt;unsigned long const, std::shared_ptr&lt;entt::basic_sparse_set&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; &gt; &gt; &gt; &gt;::find (3,009,027 samples, 0.01%)</title><rect x="1187.4" y="285" width="0.2" height="15.0" fill="rgb(240,162,38)" rx="2" ry="2" />
+<text  x="1190.43" y="295.5" ></text>
+</g>
+<g >
+<title>gz::math::eigen3::convert (14,042,126 samples, 0.05%)</title><rect x="1121.5" y="285" width="0.6" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="1124.52" y="295.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__copy_move&lt;false, true, std::random_access_iterator_tag&gt;::__copy_m&lt;gz::physics::WorldPose const, gz::physics::WorldPose&gt; (12,036,108 samples, 0.04%)</title><rect x="12.7" y="93" width="0.5" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="15.68" y="103.5" ></text>
+</g>
+<g >
+<title>gz::physics::MakeCloneable&lt;gz::physics::WorldPoses&gt;::Clone (1,091,273,792 samples, 3.64%)</title><rect x="1123.5" y="253" width="42.9" height="15.0" fill="rgb(230,118,28)" rx="2" ry="2" />
+<text  x="1126.45" y="263.5" >gz::..</text>
+</g>
+<g >
+<title>operator new (4,012,036 samples, 0.01%)</title><rect x="15.8" y="173" width="0.2" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="18.84" y="183.5" ></text>
+</g>
+<g >
+<title>Eigen::DenseStorage&lt;double, -1, -1, 1, 0&gt;::resize (4,012,036 samples, 0.01%)</title><rect x="1039.3" y="141" width="0.2" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1042.30" y="151.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::DegreeOfFreedom::getPosition (2,785,355,993 samples, 9.29%)</title><rect x="120.4" y="285" width="109.6" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="123.36" y="295.5" >dart::dynamic..</text>
+</g>
+<g >
+<title>__ldexp (37,111,333 samples, 0.12%)</title><rect x="800.0" y="205" width="1.5" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="803.00" y="215.5" ></text>
+</g>
+<g >
+<title>Each&lt;gz::sim::v11::components::Component&lt;std::add_lvalue_reference&lt;void&gt;, gz::sim::v11::components::DefaultLevelTag, gz::sim::v11::serializers::DefaultSerializer&lt;std::add_lvalue_reference&lt;void&gt; &gt; &gt;, gz::sim::v11::LevelManager::UpdateLevelsState (4,012,036 samples, 0.01%)</title><rect x="10.4" y="365" width="0.2" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="13.43" y="375.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::Assignment&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, Eigen::internal::assign_op&lt;double, double&gt;, Eigen::internal::Dense2Dense, void&gt;::run (98,294,882 samples, 0.33%)</title><rect x="1035.6" y="205" width="3.9" height="15.0" fill="rgb(232,128,30)" rx="2" ry="2" />
+<text  x="1038.59" y="215.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; std::__copy_move_a&lt;false, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; &gt; (17,051,153 samples, 0.06%)</title><rect x="11.9" y="173" width="0.7" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="14.89" y="183.5" ></text>
+</g>
+<g >
+<title>gz::physics::MakeCloneable&lt;gz::physics::WorldPoses&gt;::Copy (20,060,180 samples, 0.07%)</title><rect x="13.2" y="205" width="0.7" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="16.16" y="215.5" ></text>
+</g>
+<g >
+<title>dart::collision::GzOdeCollisionDetector::collide (12,813,439,975 samples, 42.73%)</title><rect x="416.6" y="253" width="504.2" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="419.58" y="263.5" >dart::collision::GzOdeCollisionDetector::collide</text>
+</g>
+<g >
+<title>void Eigen::internal::conditional_aligned_free&lt;true&gt; (46,138,414 samples, 0.15%)</title><rect x="92.6" y="237" width="1.8" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="95.61" y="247.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::systems::PhysicsPrivate::UpdateSim (14,042,126 samples, 0.05%)</title><rect x="1187.2" y="349" width="0.6" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="1190.20" y="359.5" ></text>
+</g>
+<g >
+<title>Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt;&amp; Eigen::PlainObjectBase&lt;Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt; &gt;::_set_noalias&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt; &gt; (166,499,494 samples, 0.56%)</title><rect x="1106.6" y="253" width="6.5" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="1109.56" y="263.5" ></text>
+</g>
+<g >
+<title>gz::physics::CompositeData::Copy (20,060,180 samples, 0.07%)</title><rect x="13.2" y="253" width="0.7" height="15.0" fill="rgb(217,55,13)" rx="2" ry="2" />
+<text  x="16.16" y="263.5" ></text>
+</g>
+<g >
+<title>dart::collision::BodyNodeCollisionFilter::ignoresCollision (4,012,036 samples, 0.01%)</title><rect x="1189.8" y="477" width="0.2" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="1192.84" y="487.5" ></text>
+</g>
+<g >
+<title>gz::physics::SpecifyData&lt;gz::physics::RequireData&lt;gz::physics::WorldPoses&gt;, gz::physics::ExpectData&lt;gz::physics::ChangedWorldPoses, gz::physics::Contacts, gz::physics::JointPositions&gt; &gt;::SpecifyData (1,107,321,936 samples, 3.69%)</title><rect x="1123.2" y="333" width="43.6" height="15.0" fill="rgb(239,157,37)" rx="2" ry="2" />
+<text  x="1126.22" y="343.5" >gz::..</text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::isCollidable (328,986,952 samples, 1.10%)</title><rect x="688.6" y="157" width="12.9" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="691.57" y="167.5" ></text>
+</g>
+<g >
+<title>dart::collision::CollisionObject::getShapeFrame (18,054,162 samples, 0.06%)</title><rect x="756.9" y="173" width="0.7" height="15.0" fill="rgb(236,146,35)" rx="2" ry="2" />
+<text  x="759.93" y="183.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Joint::isKinematic (934,804,388 samples, 3.12%)</title><rect x="929.1" y="253" width="36.7" height="15.0" fill="rgb(249,203,48)" rx="2" ry="2" />
+<text  x="932.06" y="263.5" >dar..</text>
+</g>
+<g >
+<title>std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt;::operator= (31,093,279 samples, 0.10%)</title><rect x="14.0" y="221" width="1.2" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="16.99" y="231.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::redux_novec_unroller&lt;Eigen::internal::scalar_sum_op&lt;double, double&gt;, Eigen::internal::redux_evaluator&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt;, 1, 1&gt;::run (3,009,027 samples, 0.01%)</title><rect x="1117.1" y="141" width="0.2" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="1120.14" y="151.5" ></text>
+</g>
+<g >
+<title>malloc@plt (10,030,090 samples, 0.03%)</title><rect x="920.4" y="189" width="0.4" height="15.0" fill="rgb(246,192,46)" rx="2" ry="2" />
+<text  x="923.42" y="199.5" ></text>
+</g>
+<g >
+<title>unsigned long const&amp; std::min&lt;unsigned long&gt; (5,015,045 samples, 0.02%)</title><rect x="1186.5" y="125" width="0.2" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="1189.49" y="135.5" ></text>
+</g>
+<g >
+<title>gz::physics::ForwardStep::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList&gt;::Step (28,136,408,468 samples, 93.83%)</title><rect x="16.0" y="333" width="1107.2" height="15.0" fill="rgb(236,142,34)" rx="2" ry="2" />
+<text  x="19.00" y="343.5" >gz::physics::ForwardStep::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList&gt;::Step</text>
+</g>
+<g >
+<title>Eigen::internal::copy_using_evaluator_DefaultTraversal_CompleteUnrolling&lt;Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt; &gt;, Eigen::internal::assign_op&lt;double, double&gt;, 0&gt;, 2, 3&gt;::run (166,499,494 samples, 0.56%)</title><rect x="1106.6" y="173" width="6.5" height="15.0" fill="rgb(249,206,49)" rx="2" ry="2" />
+<text  x="1109.56" y="183.5" ></text>
+</g>
+<g >
+<title>Eigen::DenseBase&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt;::sum (80,240,720 samples, 0.27%)</title><rect x="1117.1" y="221" width="3.2" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
+<text  x="1120.14" y="231.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::getParentJoint (202,607,818 samples, 0.68%)</title><rect x="920.8" y="253" width="8.0" height="15.0" fill="rgb(244,181,43)" rx="2" ry="2" />
+<text  x="923.81" y="263.5" ></text>
+</g>
+<g >
+<title>operator delete (8,024,072 samples, 0.03%)</title><rect x="854.9" y="205" width="0.3" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="857.86" y="215.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::clearConstraintImpulse (14,042,126 samples, 0.05%)</title><rect x="1189.3" y="477" width="0.5" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="1192.29" y="487.5" ></text>
+</g>
+<g >
+<title>gz::physics::MakeCloneable&lt;gz::physics::WorldPoses&gt;::Copy (12,036,108 samples, 0.04%)</title><rect x="12.7" y="205" width="0.5" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="15.68" y="215.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Joint::getActuatorType (5,015,045 samples, 0.02%)</title><rect x="928.9" y="253" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="931.87" y="263.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::asSoftBodyNode (4,012,036 samples, 0.01%)</title><rect x="968.2" y="253" width="0.1" height="15.0" fill="rgb(215,49,11)" rx="2" ry="2" />
+<text  x="971.18" y="263.5" ></text>
+</g>
+<g >
+<title>___pthread_mutex_lock (3,009,027 samples, 0.01%)</title><rect x="10.6" y="317" width="0.1" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="13.63" y="327.5" ></text>
+</g>
+<g >
+<title>__scalbn (14,042,126 samples, 0.05%)</title><rect x="800.9" y="173" width="0.6" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="803.90" y="183.5" ></text>
+</g>
+<g >
+<title>dGeomGetBodyNext (3,009,027 samples, 0.01%)</title><rect x="450.6" y="173" width="0.1" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="453.61" y="183.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::resize_if_allowed&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;, double, double&gt; (42,126,378 samples, 0.14%)</title><rect x="1037.8" y="173" width="1.7" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1040.80" y="183.5" ></text>
+</g>
+<g >
+<title>CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt;, const std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt;&amp;&gt; (33,099,297 samples, 0.11%)</title><rect x="13.9" y="285" width="1.3" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="16.95" y="295.5" ></text>
+</g>
+<g >
+<title>dxSafeNormalize4 (320,962,880 samples, 1.07%)</title><rect x="461.7" y="173" width="12.6" height="15.0" fill="rgb(227,104,24)" rx="2" ry="2" />
+<text  x="464.70" y="183.5" ></text>
+</g>
+<g >
+<title>Eigen::MapBase&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt;, 0&gt;::MapBase (29,087,261 samples, 0.10%)</title><rect x="1120.3" y="221" width="1.1" height="15.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="1123.30" y="231.5" ></text>
+</g>
+<g >
+<title>gz::physics::ForwardStep::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt; &gt;* gz::physics::Entity&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList&gt;::Interface&lt;gz::physics::ForwardStep&gt; (5,015,045 samples, 0.02%)</title><rect x="16.0" y="317" width="0.2" height="15.0" fill="rgb(221,77,18)" rx="2" ry="2" />
+<text  x="19.00" y="327.5" ></text>
+</g>
+<g >
+<title>Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt;&amp; Eigen::PlainObjectBase&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt;::_set&lt;Eigen::Matrix&lt;double, -1, 1, 0, -1, 1&gt; &gt; (98,294,882 samples, 0.33%)</title><rect x="1035.6" y="269" width="3.9" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="1038.59" y="279.5" ></text>
+</g>
+<g >
+<title>entt::basic_view&lt;entt::get_t&lt;entt::storage_for&lt;gz::sim::v11::components::Component&lt;std::vector&lt;double, std::allocator&lt;double&gt; &gt;, gz::sim::v11::components::JointPositionResetTag, gz::sim::v11::serializers::VectorDoubleSerializer&gt;, unsigned long, std::allocator&lt;std::remove_const&lt;gz::sim::v11::components::Component&lt;std::vector&lt;double, std::allocator&lt;double&gt; &gt;, gz::sim::v11::components::JointPositionResetTag, gz::sim::v11::serializers::VectorDoubleSerializer&gt; &gt;::type&gt; &gt;::type&gt;, entt::exclude_t&lt;&gt;, void&gt; entt::basic_registry&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt;::view&lt;gz::sim::v11::components::Component&lt;std::vector&lt;double, std::allocator&lt;double&gt; &gt;, gz::sim::v11::components::JointPositionResetTag, gz::sim::v11::serializers::VectorDoubleSerializer&gt;&gt; (3,009,027 samples, 0.01%)</title><rect x="1187.4" y="317" width="0.2" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="1190.43" y="327.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt;::operator= (12,036,108 samples, 0.04%)</title><rect x="12.7" y="173" width="0.5" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="15.68" y="183.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::clearConstraintImpulses (1,358,074,186 samples, 4.53%)</title><rect x="968.6" y="269" width="53.4" height="15.0" fill="rgb(223,82,19)" rx="2" ry="2" />
+<text  x="971.57" y="279.5" >dart:..</text>
+</g>
+<g >
+<title>CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt;, const std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt;&amp;&gt; (18,054,162 samples, 0.06%)</title><rect x="11.9" y="269" width="0.7" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="14.86" y="279.5" ></text>
+</g>
+<g >
+<title>Eigen::Quaternion&lt;double, 0&gt;&amp; Eigen::QuaternionBase&lt;Eigen::Quaternion&lt;double, 0&gt; &gt;::operator=&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; &gt; (182,547,638 samples, 0.61%)</title><rect x="1113.1" y="269" width="7.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1116.11" y="279.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Frame::getWorldTransform (1,420,260,744 samples, 4.74%)</title><rect x="486.4" y="189" width="55.9" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="489.37" y="199.5" >dart:..</text>
+</g>
+<g >
+<title>Each&lt;gz::sim::v11::components::Component&lt;std::vector&lt;double, std::allocator&lt;double&gt; &gt;, gz::sim::v11::components::JointPositionResetTag, gz::sim::v11::serializers::VectorDoubleSerializer&gt;, gz::sim::v11::systems::PhysicsPrivate::UpdateSim (3,009,027 samples, 0.01%)</title><rect x="1187.4" y="333" width="0.2" height="15.0" fill="rgb(232,125,29)" rx="2" ry="2" />
+<text  x="1190.43" y="343.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__copy_move_a1&lt;false, gz::physics::WorldPose const*, gz::physics::WorldPose*&gt; (19,057,171 samples, 0.06%)</title><rect x="13.2" y="125" width="0.7" height="15.0" fill="rgb(231,124,29)" rx="2" ry="2" />
+<text  x="16.20" y="135.5" ></text>
+</g>
+<g >
+<title>dRfromQ (181,544,629 samples, 0.61%)</title><rect x="454.6" y="173" width="7.1" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="457.55" y="183.5" ></text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (364,092,267 samples, 1.21%)</title><rect x="106.0" y="285" width="14.4" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="109.03" y="295.5" ></text>
+</g>
+<g >
+<title>void gz::sim::v11::EntityComponentManager::Each&lt;gz::sim::v11::components::Component&lt;gz::math::v10::Vector3&lt;double&gt;, gz::sim::v11::components::GravityTag, gz::sim::v11::serializers::DefaultSerializer&lt;gz::math::v10::Vector3&lt;double&gt; &gt; &gt;, gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics (491,474,410 samples, 1.64%)</title><rect x="1167.4" y="317" width="19.4" height="15.0" fill="rgb(232,124,29)" rx="2" ry="2" />
+<text  x="1170.42" y="327.5" ></text>
+</g>
+<g >
+<title>gz::physics::MakeCloneable&lt;gz::physics::WorldPoses&gt;::Copy (17,051,153 samples, 0.06%)</title><rect x="11.9" y="237" width="0.7" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="14.89" y="247.5" ></text>
+</g>
+<g >
+<title>dart::simulation::World::step (18,836,509,020 samples, 62.82%)</title><rect x="284.5" y="301" width="741.3" height="15.0" fill="rgb(219,65,15)" rx="2" ry="2" />
+<text  x="287.51" y="311.5" >dart::simulation::World::step</text>
+</g>
+<g >
+<title>Eigen::internal::redux_novec_unroller&lt;Eigen::internal::scalar_sum_op&lt;double, double&gt;, Eigen::internal::redux_evaluator&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt;, 1, 2&gt;::run (79,237,711 samples, 0.26%)</title><rect x="1117.1" y="157" width="3.2" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="1120.14" y="167.5" ></text>
+</g>
+<g >
+<title>dxSphere::computeAABB (22,066,198 samples, 0.07%)</title><rect x="853.8" y="189" width="0.8" height="15.0" fill="rgb(235,142,33)" rx="2" ry="2" />
+<text  x="856.75" y="199.5" ></text>
+</g>
+<g >
+<title>[libdart-collision-ode.so.6.13.2] (2,861,584,677 samples, 9.54%)</title><rect x="645.7" y="205" width="112.6" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="648.71" y="215.5" >[libdart-coll..</text>
+</g>
+<g >
+<title>Eigen::DenseBase&lt;Eigen::CwiseBinaryOp&lt;Eigen::internal::scalar_cmp_op&lt;double, double,  (12,036,108 samples, 0.04%)</title><rect x="92.1" y="285" width="0.5" height="15.0" fill="rgb(228,108,25)" rx="2" ry="2" />
+<text  x="95.14" y="295.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::call_dense_assignment_loop&lt;Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt;, Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt;, Eigen::internal::assign_op&lt;double, double&gt; &gt; (166,499,494 samples, 0.56%)</title><rect x="1106.6" y="205" width="6.5" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="1109.56" y="215.5" ></text>
+</g>
+<g >
+<title>dart::collision::OdeCollisionObject::updateEngineData (2,949,849,469 samples, 9.84%)</title><rect x="426.2" y="205" width="116.1" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="429.17" y="215.5" >dart::collisio..</text>
+</g>
+<g >
+<title>gz::sim::v11::systems::PhysicsPrivate::CreatePhysicsEntities (8,024,072 samples, 0.03%)</title><rect x="15.3" y="349" width="0.3" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="18.33" y="359.5" ></text>
+</g>
+<g >
+<title>gz::transport::v16::Node::Publisher::HasConnections (15,045,135 samples, 0.05%)</title><rect x="10.8" y="365" width="0.6" height="15.0" fill="rgb(243,175,41)" rx="2" ry="2" />
+<text  x="13.83" y="375.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::clearConstraintImpulses (4,012,036 samples, 0.01%)</title><rect x="1188.9" y="477" width="0.2" height="15.0" fill="rgb(223,82,19)" rx="2" ry="2" />
+<text  x="1191.93" y="487.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::redux_novec_unroller&lt;Eigen::internal::scalar_sum_op&lt;double, double&gt;, Eigen::internal::redux_evaluator&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt;, 0, 3&gt;::run (80,240,720 samples, 0.27%)</title><rect x="1117.1" y="173" width="3.2" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="1120.14" y="183.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Frame::getWorldTransform (1,316,950,817 samples, 4.39%)</title><rect x="1054.7" y="301" width="51.9" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="1057.74" y="311.5" >dart:..</text>
+</g>
+<g >
+<title>gz::sim::v11::ServerPrivate::Run (29,946,839,713 samples, 99.87%)</title><rect x="10.1" y="429" width="1178.4" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="13.08" y="439.5" >gz::sim::v11::ServerPrivate::Run</text>
+</g>
+<g >
+<title>dxGeom::computePosr (804,413,218 samples, 2.68%)</title><rect x="822.1" y="189" width="31.7" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="825.10" y="199.5" >dx..</text>
+</g>
+<g >
+<title>dart::collision::CollisionGroup::update (8,024,072 samples, 0.03%)</title><rect x="1188.6" y="493" width="0.3" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1191.58" y="503.5" ></text>
+</g>
+<g >
+<title>double Eigen::DenseBase&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt;::redux&lt;Eigen::internal::scalar_sum_op&lt;double, double&gt; &gt; (80,240,720 samples, 0.27%)</title><rect x="1117.1" y="205" width="3.2" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="1120.14" y="215.5" ></text>
+</g>
+<g >
+<title>__GI___libc_free (7,021,063 samples, 0.02%)</title><rect x="759.1" y="189" width="0.3" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="762.10" y="199.5" ></text>
+</g>
+<g >
+<title>std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, void*, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt; &gt;::find (9,027,081 samples, 0.03%)</title><rect x="1186.3" y="221" width="0.4" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="1189.33" y="231.5" ></text>
+</g>
+<g >
+<title>unlink_chunk (823,470,389 samples, 2.75%)</title><rect x="887.9" y="157" width="32.4" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="890.90" y="167.5" >un..</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;gz::physics::CompositeData::TypeName, std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt;, std::_Select1st&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt;::_M_drop_node (4,012,036 samples, 0.01%)</title><rect x="1187.8" y="333" width="0.1" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="1190.75" y="343.5" ></text>
+</g>
+<g >
+<title>gz::physics::EntityPtr&lt;gz::physics::World&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::GravityFeatureList&gt; &gt; gz::sim::v11::systems::physics_system::EntityFeatureMap&lt;gz::physics::World, gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList, gz::sim::v11::systems::PhysicsPrivate::CollisionFeatureList, gz::sim::v11::systems::PhysicsPrivate::ContactFeatureList, gz::sim::v11::systems::PhysicsPrivate::GravityFeatureList, gz::sim::v11::systems::PhysicsPrivate::RayIntersectionFeatureList, gz::sim::v11::systems::PhysicsPrivate::BatchRayIntersectionFeatureList, gz::sim::v11::systems::PhysicsPrivate::SetContactPropertiesCallbackFeatureList, gz::sim::v11::systems::PhysicsPrivate::NestedModelFeatureList, gz::sim::v11::systems::PhysicsPrivate::CollisionDetectorFeatureList, gz::sim::v11::systems::PhysicsPrivate::SolverFeatureList, gz::sim::v11::systems::PhysicsPrivate::WorldModelFeatureList, gz::sim::v11::systems::PhysicsPrivate::CollisionPairMaxContactsFeatureList&gt;::EntityCast&lt;gz::sim::v11::systems::PhysicsPrivate::GravityFeatureList&gt; (7,021,063 samples, 0.02%)</title><rect x="1167.1" y="301" width="0.2" height="15.0" fill="rgb(232,125,30)" rx="2" ry="2" />
+<text  x="1170.07" y="311.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::redux_evaluator&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt;::coeffByOuterInner (3,009,027 samples, 0.01%)</title><rect x="1117.1" y="125" width="0.2" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="1120.14" y="135.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Node::getBodyNodePtr (1,189,568,674 samples, 3.97%)</title><rect x="701.5" y="157" width="46.8" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="704.52" y="167.5" >dart..</text>
+</g>
+<g >
+<title>dGeomIsSpace@plt (11,033,099 samples, 0.04%)</title><rect x="646.9" y="189" width="0.5" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="649.93" y="199.5" ></text>
+</g>
+<g >
+<title>_int_free (7,021,063 samples, 0.02%)</title><rect x="759.1" y="173" width="0.3" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="762.10" y="183.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::BlockImpl_dense&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false, true&gt;::BlockImpl_dense (31,093,279 samples, 0.10%)</title><rect x="1120.3" y="237" width="1.2" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="1123.30" y="247.5" ></text>
+</g>
+<g >
+<title>dart::constraint::ConstraintSolver::solve (4,012,036 samples, 0.01%)</title><rect x="1188.9" y="493" width="0.2" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="1191.93" y="503.5" ></text>
+</g>
+<g >
+<title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::basic_string (4,012,036 samples, 0.01%)</title><rect x="10.9" y="333" width="0.2" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="13.91" y="343.5" ></text>
+</g>
+<g >
+<title>void gz::physics::CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt; const&amp;&gt; (1,100,300,873 samples, 3.67%)</title><rect x="1123.3" y="285" width="43.3" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="1126.26" y="295.5" >void..</text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; std::copy&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt;, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; &gt; (19,057,171 samples, 0.06%)</title><rect x="13.2" y="157" width="0.7" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="16.20" y="167.5" ></text>
+</g>
+<g >
+<title>tcache_get (24,072,216 samples, 0.08%)</title><rect x="118.8" y="253" width="1.0" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="121.82" y="263.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::redux_evaluator&lt;Eigen::Diagonal&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt; const, 0&gt; &gt;::coeffByOuterInner (76,228,684 samples, 0.25%)</title><rect x="1117.3" y="125" width="3.0" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="1120.26" y="135.5" ></text>
+</g>
+<g >
+<title>tcache_get (3,009,027 samples, 0.01%)</title><rect x="920.3" y="173" width="0.1" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="923.30" y="183.5" ></text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (189,568,701 samples, 0.63%)</title><rect x="653.9" y="157" width="7.4" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="656.88" y="167.5" ></text>
+</g>
+<g >
+<title>dxSpace::dirty (20,060,180 samples, 0.07%)</title><rect x="451.9" y="157" width="0.8" height="15.0" fill="rgb(223,83,19)" rx="2" ry="2" />
+<text  x="454.87" y="167.5" ></text>
+</g>
+<g >
+<title>main (29,946,839,713 samples, 99.87%)</title><rect x="10.1" y="445" width="1178.4" height="15.0" fill="rgb(243,179,42)" rx="2" ry="2" />
+<text  x="13.08" y="455.5" >main</text>
+</g>
+<g >
+<title>dart::collision::CollisionGroup::updateEngineData (3,191,574,638 samples, 10.64%)</title><rect x="416.7" y="221" width="125.6" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="419.66" y="231.5" >dart::collision..</text>
+</g>
+<g >
+<title>gz::physics::ForwardStep::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt; &gt;* gz::plugin::detail::SelectSpecializers&lt;gz::physics::detail::ComposePlugin&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList, void&gt;::type&gt;::QueryInterface&lt;gz::physics::ForwardStep::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt; &gt; &gt; (5,015,045 samples, 0.02%)</title><rect x="16.0" y="301" width="0.2" height="15.0" fill="rgb(219,66,15)" rx="2" ry="2" />
+<text  x="19.00" y="311.5" ></text>
+</g>
+<g >
+<title>operator new (1,668,003,967 samples, 5.56%)</title><rect x="855.2" y="205" width="65.6" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="858.17" y="215.5" >operato..</text>
+</g>
+<g >
+<title>ldexp@plt (3,009,027 samples, 0.01%)</title><rect x="854.7" y="205" width="0.2" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="857.74" y="215.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt; &gt;::_M_lower_bound (9,027,081 samples, 0.03%)</title><rect x="1186.3" y="189" width="0.4" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="1189.33" y="199.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::mapbase_evaluator&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt;, Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt; &gt;::coeff (166,499,494 samples, 0.56%)</title><rect x="1106.6" y="125" width="6.5" height="15.0" fill="rgb(225,92,22)" rx="2" ry="2" />
+<text  x="1109.56" y="135.5" ></text>
+</g>
+<g >
+<title>void Eigen::internal::quaternionbase_assign_impl&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt;, 3, 3&gt;::run&lt;Eigen::Quaternion&lt;double, 0&gt; &gt; (146,439,314 samples, 0.49%)</title><rect x="1114.5" y="253" width="5.8" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="1117.53" y="263.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_node&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;* std::_Rb_tree&lt;gz::physics::CompositeData::TypeName, std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt;, std::_Select1st&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt;, std::less&lt;gz::physics::CompositeData::TypeName&gt;, std::allocator&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt;::_M_create_node&lt;std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (4,012,036 samples, 0.01%)</title><rect x="15.8" y="237" width="0.2" height="15.0" fill="rgb(247,196,47)" rx="2" ry="2" />
+<text  x="18.84" y="247.5" ></text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt;::_M_allocate_and_copy&lt;__gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose const*, std::vector&lt;gz::physics::WorldPose, std::allocator&lt;gz::physics::WorldPose&gt; &gt; &gt; &gt; (31,093,279 samples, 0.10%)</title><rect x="14.0" y="205" width="1.2" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="16.99" y="215.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt; &gt;::find (9,027,081 samples, 0.03%)</title><rect x="1186.3" y="205" width="0.4" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="1189.33" y="215.5" ></text>
+</g>
+<g >
+<title>std::__new_allocator&lt;gz::physics::WorldPose&gt;::allocate (989,969,883 samples, 3.30%)</title><rect x="1127.4" y="109" width="39.0" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="1130.40" y="119.5" >std..</text>
+</g>
+<g >
+<title>gz::physics::WorldPose* std::__copy_move&lt;false, true, std::random_access_iterator_tag&gt;::__copy_m&lt;gz::physics::WorldPose const, gz::physics::WorldPose&gt; (19,057,171 samples, 0.06%)</title><rect x="13.2" y="93" width="0.7" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="16.20" y="103.5" ></text>
+</g>
+<g >
+<title>dart::constraint::ConstraintSolver::updateConstraints (17,239,718,692 samples, 57.49%)</title><rect x="287.4" y="269" width="678.4" height="15.0" fill="rgb(239,160,38)" rx="2" ry="2" />
+<text  x="290.44" y="279.5" >dart::constraint::ConstraintSolver::updateConstraints</text>
+</g>
+<g >
+<title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::compare (9,027,081 samples, 0.03%)</title><rect x="1186.3" y="141" width="0.4" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="1189.33" y="151.5" ></text>
+</g>
+<g >
+<title>dxGeom::AABBTest (13,039,117 samples, 0.04%)</title><rect x="761.0" y="189" width="0.5" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="764.00" y="199.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::MetaSkeleton::getPositions (4,830,491,344 samples, 16.11%)</title><rect x="94.4" y="301" width="190.1" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="97.43" y="311.5" >dart::dynamics::MetaSkel..</text>
+</g>
+<g >
+<title>Eigen::DenseStorage&lt;double, -1, -1, 1, 0&gt;::~DenseStorage (46,138,414 samples, 0.15%)</title><rect x="92.6" y="269" width="1.8" height="15.0" fill="rgb(241,167,39)" rx="2" ry="2" />
+<text  x="95.61" y="279.5" ></text>
+</g>
+<g >
+<title>__libc_start_call_main (29,946,839,713 samples, 99.87%)</title><rect x="10.1" y="461" width="1178.4" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="13.08" y="471.5" >__libc_start_call_main</text>
+</g>
+<g >
+<title>dGeomGetBodyNext (3,009,027 samples, 0.01%)</title><rect x="453.8" y="173" width="0.2" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="456.84" y="183.5" ></text>
+</g>
+<g >
+<title>gz::physics::dartsim::SimulationFeatures::Write (2,126,379,080 samples, 7.09%)</title><rect x="1039.5" y="317" width="83.7" height="15.0" fill="rgb(247,196,47)" rx="2" ry="2" />
+<text  x="1042.54" y="327.5" >gz::physi..</text>
+</g>
+<g >
+<title>gz::physics::ExpectData&lt;gz::physics::Contacts&gt;::operator= (13,039,117 samples, 0.04%)</title><rect x="12.6" y="269" width="0.6" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="15.64" y="279.5" ></text>
+</g>
+<g >
+<title>gz::plugin::Plugin::PrivateQueryInterface (9,027,081 samples, 0.03%)</title><rect x="1186.3" y="237" width="0.4" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="1189.33" y="247.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::systems::SceneBroadcaster::PostUpdate (9,027,081 samples, 0.03%)</title><rect x="1187.9" y="365" width="0.4" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="1190.91" y="375.5" ></text>
+</g>
+<g >
+<title>gz::physics::RequireData&lt;gz::physics::WorldPoses&gt;::operator= (34,102,306 samples, 0.11%)</title><rect x="13.9" y="333" width="1.4" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="16.95" y="343.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::SimulationRunner::Step (29,938,815,641 samples, 99.84%)</title><rect x="10.2" y="397" width="1178.2" height="15.0" fill="rgb(231,119,28)" rx="2" ry="2" />
+<text  x="13.24" y="407.5" >gz::sim::v11::SimulationRunner::Step</text>
+</g>
+<g >
+<title>gz::physics::ExpectData&lt;gz::physics::Contacts, gz::physics::JointPositions&gt;::operator= (34,102,306 samples, 0.11%)</title><rect x="12.6" y="301" width="1.3" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="15.61" y="311.5" ></text>
+</g>
+<g >
+<title>dart::collision::CollisionGroup::collide (1,989,969,856 samples, 6.64%)</title><rect x="338.2" y="253" width="78.3" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="341.23" y="263.5" >dart::col..</text>
+</g>
+<g >
+<title>[libode.so.8.0.2] (100,300,900 samples, 0.33%)</title><rect x="758.3" y="205" width="4.0" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="761.31" y="215.5" ></text>
+</g>
+<g >
+<title>gz::physics::CompositeData::Copy (19,057,171 samples, 0.06%)</title><rect x="11.9" y="285" width="0.7" height="15.0" fill="rgb(217,55,13)" rx="2" ry="2" />
+<text  x="14.86" y="295.5" ></text>
+</g>
+<g >
+<title>gz::physics::Gravity::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt; &gt;* gz::plugin::Plugin::QueryInterface&lt;gz::physics::Gravity::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt; &gt; &gt; (9,027,081 samples, 0.03%)</title><rect x="1186.3" y="253" width="0.4" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="1189.33" y="263.5" ></text>
+</g>
+<g >
+<title>operator (9,027,081 samples, 0.03%)</title><rect x="1167.1" y="317" width="0.3" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="1170.07" y="327.5" ></text>
+</g>
+<g >
+<title>gz::plugin::Plugin::PrivateQueryInterface (5,015,045 samples, 0.02%)</title><rect x="16.0" y="269" width="0.2" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="19.00" y="279.5" ></text>
+</g>
+<g >
+<title>dGeomGetData@plt (12,036,108 samples, 0.04%)</title><rect x="646.5" y="189" width="0.4" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="649.46" y="199.5" ></text>
+</g>
+<g >
+<title>gz::sim::v11::LevelManager::UpdateLevelsState (3,009,027 samples, 0.01%)</title><rect x="10.6" y="333" width="0.1" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="13.63" y="343.5" ></text>
+</g>
+<g >
+<title>operator new (989,969,883 samples, 3.30%)</title><rect x="1127.4" y="93" width="39.0" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1130.40" y="103.5" >ope..</text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;unsigned long const, std::shared_ptr&lt;gz::physics::dartsim::LinkInfo&gt; &gt;, false, false&gt;::operator++ (3,009,027 samples, 0.01%)</title><rect x="1025.8" y="301" width="0.2" height="15.0" fill="rgb(232,124,29)" rx="2" ry="2" />
+<text  x="1028.84" y="311.5" ></text>
+</g>
+<g >
+<title>_int_malloc (989,969,883 samples, 3.30%)</title><rect x="1127.4" y="61" width="39.0" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="1130.40" y="71.5" >_in..</text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;unsigned long const, std::shared_ptr&lt;gz::physics::dartsim::LinkInfo&gt; &gt;, false&gt;::_M_next (3,009,027 samples, 0.01%)</title><rect x="1025.8" y="269" width="0.2" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="1028.84" y="279.5" ></text>
+</g>
+<g >
+<title>Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 3, false&gt;::Block (31,093,279 samples, 0.10%)</title><rect x="1120.3" y="269" width="1.2" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
+<text  x="1123.30" y="279.5" ></text>
+</g>
+<g >
+<title>bool std::operator&lt; &lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; (9,027,081 samples, 0.03%)</title><rect x="1186.3" y="157" width="0.4" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="1189.33" y="167.5" ></text>
+</g>
+<g >
+<title>Eigen::internal::generic_dense_assignment_kernel&lt;Eigen::internal::evaluator&lt;Eigen::Matrix&lt;double, 3, 1, 0, 3, 1&gt; &gt;, Eigen::internal::evaluator&lt;Eigen::Block&lt;Eigen::Matrix&lt;double, 4, 4, 0, 4, 4&gt; const, 3, 1, true&gt; &gt;, Eigen::internal::assign_op&lt;double, double&gt;, 0&gt;::assignCoeffByOuterInner (166,499,494 samples, 0.56%)</title><rect x="1106.6" y="157" width="6.5" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1109.56" y="167.5" ></text>
+</g>
+<g >
+<title>std::__new_allocator&lt;std::_Rb_tree_node&lt;std::pair&lt;gz::physics::CompositeData::TypeName const, gz::physics::CompositeData::DataEntry&gt; &gt; &gt;::allocate (4,012,036 samples, 0.01%)</title><rect x="15.8" y="189" width="0.2" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="18.84" y="199.5" ></text>
+</g>
+<g >
+<title>gz::physics::Gravity::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt; &gt;* gz::plugin::detail::SelectSpecializers&lt;gz::physics::detail::ComposePlugin&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt;, gz::sim::v11::systems::PhysicsPrivate::GravityFeatureList, void&gt;::type&gt;::QueryInterface&lt;gz::physics::Gravity::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3ul&gt; &gt; &gt; (9,027,081 samples, 0.03%)</title><rect x="1186.3" y="269" width="0.4" height="15.0" fill="rgb(208,14,3)" rx="2" ry="2" />
+<text  x="1189.33" y="279.5" ></text>
+</g>
+<g >
+<title>gz::physics::dartsim::BitmaskContactFilter::ignoresCollision (4,012,036 samples, 0.01%)</title><rect x="1189.8" y="493" width="0.2" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="1192.84" y="503.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::clearConstraintImpulse (685,055,147 samples, 2.28%)</title><rect x="995.1" y="253" width="26.9" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="998.06" y="263.5" >d..</text>
+</g>
+<g >
+<title>gz::physics::SpecifyData&lt;gz::physics::RequireData&lt;gz::physics::WorldPoses&gt;, gz::physics::ExpectData&lt;gz::physics::ChangedWorldPoses, gz::physics::Contacts, gz::physics::JointPositions&gt; &gt;::SpecifyData (4,012,036 samples, 0.01%)</title><rect x="11.7" y="349" width="0.2" height="15.0" fill="rgb(239,157,37)" rx="2" ry="2" />
+<text  x="14.70" y="359.5" ></text>
+</g>
+<g >
+<title>__libc_start_main_impl (29,946,839,713 samples, 99.87%)</title><rect x="10.1" y="477" width="1178.4" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="13.08" y="487.5" >__libc_start_main_impl</text>
+</g>
+<g >
+<title>gz::sim::v11::LevelManager::UpdateLevelsState (9,027,081 samples, 0.03%)</title><rect x="10.4" y="381" width="0.3" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="13.39" y="391.5" ></text>
+</g>
+</g>
+</svg>

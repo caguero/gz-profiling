@@ -1,0 +1,20 @@
+============================================
+  Unified Profiling Summary: 3k_shapes
+============================================
+  Dimensions: cpu
+  CPU total:  29979939010 samples
+
+  Rank Function                                           Score   CPU%  Cache  HITM% Sched Sources
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1	gz::sim::v11::systems::Physics::Update	40	99.7	-	-	-	cpu
+2	gz::sim::v11::systems::PhysicsPrivate::Step	40	98.3	-	-	-	cpu
+3	gz::sim::v11::SimulationRunner::UpdateSystems	40	99.8	-	-	-	cpu
+4	gz::sim::v11::SimulationRunner::Step	40	99.8	-	-	-	cpu
+5	gz::sim::v11::SimulationRunner::Run	40	99.8	-	-	-	cpu
+6	gz::sim::v11::ServerPrivate::Run	40	99.8	-	-	-	cpu
+7	gz::physics::ForwardStep::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList>::Step	40	98.3	-	-	-	cpu
+8	gz::physics::dartsim::SimulationFeatures::WorldForwardStep	40	95.8	-	-	-	cpu
+9	gz::physics::dartsim::SimulationFeatures::Write	10	2.5	-	-	-	cpu
+10	gz::physics::dartsim::BitmaskContactFilter::ignoresCollision	10	1.8	-	-	-	cpu
+11	gz::sim::v11::systems::PhysicsPrivate::UpdateSim	5	0.6	-	-	-	cpu
+12	gz::sim::v11::systems::PhysicsPrivate::ChangedLinks	5	0.6	-	-	-	cpu

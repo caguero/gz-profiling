@@ -1,0 +1,28 @@
+============================================
+  Unified Profiling Summary: gpu_lidar_sensor
+============================================
+  Dimensions: cpu
+  CPU total:  38094281820 samples
+
+  Rank Function                                           Score   CPU%  Cache  HITM% Sched Sources
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1	gz::sim::v11::systems::SensorsPrivate::RunOnce	40	25.7	-	-	-	cpu
+2	gz::sim::v11::systems::SensorsPrivate::RenderThread	40	25.7	-	-	-	cpu
+3	gz::sim::v11::systems::Physics::Update	40	64.2	-	-	-	cpu
+4	gz::sim::v11::systems::PhysicsPrivate::Step	40	59.2	-	-	-	cpu
+5	gz::sim::v11::SimulationRunner::UpdateSystems	40	70.6	-	-	-	cpu
+6	gz::sim::v11::SimulationRunner::Step	40	72.2	-	-	-	cpu
+7	gz::sim::v11::SimulationRunner::Run	40	72.5	-	-	-	cpu
+8	gz::sim::v11::ServerPrivate::Run	40	72.5	-	-	-	cpu
+9	gz::sensors::v11::Sensor::Update	40	24.3	-	-	-	cpu
+10	gz::sensors::v11::RenderingSensor::Render	40	20.1	-	-	-	cpu
+11	gz::sensors::v11::Manager::RunOnce	40	24.3	-	-	-	cpu
+12	gz::sensors::v11::GpuLidarSensor::Update	40	24.2	-	-	-	cpu
+13	gz::rendering::v11::Ogre2GpuRays::Render	40	10.4	-	-	-	cpu
+14	gz::physics::ForwardStep::World<gz::physics::FeaturePolicy<double, 3ul>, gz::sim::v11::systems::PhysicsPrivate::MinimumFeatureList>::Step	40	57.7	-	-	-	cpu
+15	gz::physics::dartsim::SimulationFeatures::WorldForwardStep	40	56.9	-	-	-	cpu
+16	gz::rendering::v11::Ogre2GpuReadbackTicket::DownloadAndMap	25	8.2	-	-	-	cpu
+17	gz::rendering::v11::Ogre2GpuRays::UpdateRenderTarget1stPass	25	9.6	-	-	-	cpu
+18	gz::rendering::v11::Ogre2GpuRays::PostRender	25	9.2	-	-	-	cpu
+19	gz::transport::v16::Node::Publisher::Publish	10	1.0	-	-	-	cpu
+20	gz::transport::v16::Node::Publisher::HasConnections	10	1.7	-	-	-	cpu
