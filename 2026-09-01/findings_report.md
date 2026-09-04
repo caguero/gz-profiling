@@ -269,6 +269,30 @@ never exceed 1.2% of the process.
 
 # Loading Analysis
 
+## Loading Flamegraphs
+
+Click any thumbnail to open the full interactive flamegraph in a browser
+(click to zoom, hover tooltips, Ctrl+F search; the link pre-highlights the
+frames discussed in the text).
+
+```{=latex}
+\begin{center}
+\begin{tabular}{p{4.2cm}p{2.6cm}c}
+\toprule
+World & Wall clock & Flamegraph \\
+\midrule
+3k\_shapes\_static & 2.05 s & \tthumb{figures/thumb_3k_shapes_static_loading.png}{https://caguero.github.io/gz-profiling/2026-09-01/loading/3k_shapes_static_loading.svg?s=SceneBroadcaster|sdf::Root} \\[6pt]
+3k\_shapes & 2.11 s & \tthumb{figures/thumb_3k_shapes_loading.png}{https://caguero.github.io/gz-profiling/2026-09-01/loading/3k_shapes_loading.svg?s=SceneBroadcaster|sdf::Root} \\[6pt]
+sensors & 0.82 s & \tthumb{figures/thumb_sensors_loading.png}{https://caguero.github.io/gz-profiling/2026-09-01/loading/sensors_loading.svg?s=do_lookup_x} \\[6pt]
+jetty & 1.55 s & \tthumb{figures/thumb_jetty_loading.png}{https://caguero.github.io/gz-profiling/2026-09-01/loading/jetty_loading.svg?s=Ogre2RenderEngine|libnvidia} \\[6pt]
+gpu\_lidar\_sensor & 1.22 s & \tthumb{figures/thumb_gpu_lidar_sensor_loading.png}{https://caguero.github.io/gz-profiling/2026-09-01/loading/gpu_lidar_sensor_loading.svg?s=libnvidia|Ogre2RenderEngine} \\[6pt]
+sensors\_demo & 1.19 s & \tthumb{figures/thumb_sensors_demo_loading.png}{https://caguero.github.io/gz-profiling/2026-09-01/loading/sensors_demo_loading.svg?s=libnvidia|Ogre2RenderEngine} \\[6pt]
+moving\_robots\_and\_sensors & 1.22 s & \tthumb{figures/thumb_moving_robots_and_sensors_loading.png}{https://caguero.github.io/gz-profiling/2026-09-01/loading/moving_robots_and_sensors_loading.svg?s=libnvidia|Ogre2RenderEngine} \\[6pt]
+\bottomrule
+\end{tabular}
+\end{center}
+```
+
 Loading is measured two ways: the wall clock of `gz-sim-main -s -r
 --iterations 1 <world>` without `perf` (median of three runs) and the CPU
 time of the same launch under `perf` (which inflates the wall clock to 6 to
@@ -297,8 +321,9 @@ SDF element strings). `entt::` accounts for 14% and `SdfEntityCreator` for
 5%. The static and dynamic variants load in the same time, so DART skeleton
 construction is not the bottleneck.
 
-![3k_shapes_static loading. SDF parsing and entity creation on the left,
-SceneBroadcaster scene graph construction in the middle. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/loading/3k_shapes_static_loading.svg>](figures/3k_shapes_static_loading.png){width=100% height=42%}
+```{=latex}
+\flamethumb{figures/thumb_3k_shapes_static_loading.png}{3k\_shapes\_static loading. SDF parsing and entity creation on the left, SceneBroadcaster scene graph construction in the middle.}{https://caguero.github.io/gz-profiling/2026-09-01/loading/3k_shapes_static_loading.svg?s=SceneBroadcaster|sdf::Root}
+```
 
 **jetty**: 1.6 s. Mesh loading is no longer visible (2% under
 `MeshManager`/Assimp). The loading profile is the OgreNext render engine
@@ -306,8 +331,9 @@ initialization (`Ogre2RenderEngine`, Hlms shader cache, 29%) and the NVIDIA
 driver (37%), because jetty carries a rendering sensor and creates an EGL
 context even headless.
 
-![jetty loading. Render engine and driver initialization dominate; SDF and
-model creation are a small band on the left. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/loading/jetty_loading.svg>](figures/jetty_loading.png){width=100% height=42%}
+```{=latex}
+\flamethumb{figures/thumb_jetty_loading.png}{jetty loading. Render engine and driver initialization dominate; SDF and model creation are a small band on the left.}{https://caguero.github.io/gz-profiling/2026-09-01/loading/jetty_loading.svg?s=Ogre2RenderEngine|libnvidia}
+```
 
 **Rendering sensor worlds**: 1.2 s each, 60 to 70% of the samples are
 `[unknown]` frames under `__GI___ioctl`, that is the kernel side of the
@@ -325,6 +351,30 @@ the system plugins would shave a fraction of a second everywhere.
 ```
 
 # Runtime Analysis Per World
+
+## Runtime Flamegraphs
+
+Click any thumbnail to open the full interactive flamegraph in a browser
+(click to zoom, hover tooltips, Ctrl+F search; the link pre-highlights the
+frames discussed in the text).
+
+```{=latex}
+\begin{center}
+\begin{tabular}{p{4.2cm}p{2.6cm}c}
+\toprule
+World & RTF & Flamegraph \\
+\midrule
+3k\_shapes\_static & RTF 12.0 & \tthumb{figures/thumb_3k_shapes_static.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/3k_shapes_static.svg?s=dxHashSpace|getWorldTransform|WorldPose} \\[6pt]
+3k\_shapes & RTF 12.7 & \tthumb{figures/thumb_3k_shapes.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/3k_shapes.svg?s=BoxedLcp|buildConstrainedGroups} \\[6pt]
+sensors & RTF 46.9 & \tthumb{figures/thumb_sensors.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/sensors.svg?s=UpdateSim|_Sp_counted_base} \\[6pt]
+jetty & RTF 24.3 & \tthumb{figures/thumb_jetty.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/jetty.svg?s=dxHashSpace|ignoresCollision} \\[6pt]
+gpu\_lidar\_sensor & RTF 50.7 & \tthumb{figures/thumb_gpu_lidar_sensor.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/gpu_lidar_sensor.svg?s=GpuLidarSensor|libnvidia} \\[6pt]
+sensors\_demo & RTF 11.3 & \tthumb{figures/thumb_sensors_demo.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/sensors_demo.svg?s=CameraSensor::Update|updateFromParentImpl} \\[6pt]
+moving\_robots\_and\_sensors & RTF 5.9 & \tthumb{figures/thumb_moving_robots_and_sensors.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/moving_robots_and_sensors.svg?s=RgbdCameraSensor|UpdateSim|DiffDrive} \\[6pt]
+\bottomrule
+\end{tabular}
+\end{center}
+```
 
 All percentages are of the process's total CPU time during the 30 s capture
 (all threads). "Self" is the time in the function body itself, "inclusive"
@@ -353,9 +403,9 @@ Inclusive: `PhysicsPrivate::Step` 97.6%, of which DART `World::step` 62.8%
 the `WorldPose` allocations; `PhysicsPrivate::UpdatePhysics` 1.7%; ECM
 `Each` 1.7%; transport 0.07%; SceneBroadcaster 0.03%.
 
-![3k_shapes_static runtime. The whole width is `PhysicsPrivate::Step`; the
-two towers are ODE broadphase on the left and DART's per link
-`getWorldTransform` on the right. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/runtime/3k_shapes_static.svg>](figures/3k_shapes_static_runtime.png){width=100% height=42%}
+```{=latex}
+\flamethumb{figures/thumb_3k_shapes_static.png}{3k\_shapes\_static runtime. The whole width is \texttt{PhysicsPrivate::Step}; the two towers are ODE broadphase on the left and DART's per link \texttt{getWorldTransform} on the right.}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/3k_shapes_static.svg?s=dxHashSpace|getWorldTransform|WorldPose}
+```
 
 **Findings**: with the framework gone, the static world exposes two
 per step full scans that do not need to happen for static bodies:
@@ -395,8 +445,9 @@ Inclusive: `World::step` 93.4%, `ConstraintSolver::solve` 77.0%
 Gazebo owned: `UpdateSim` 0.62%, `ChangedLinks` 0.65%, `UpdateModelPose`
 0.44%, ECM 0.14%.
 
-![3k_shapes runtime. DART's constraint solver dominates; gz-sim is the thin
-band at the bottom. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/runtime/3k_shapes.svg>](figures/3k_shapes_runtime.png){width=100% height=42%}
+```{=latex}
+\flamethumb{figures/thumb_3k_shapes.png}{3k\_shapes runtime. DART's constraint solver dominates; gz-sim is the thin band at the bottom.}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/3k_shapes.svg?s=BoxedLcp|buildConstrainedGroups}
+```
 
 **Findings**: the static to dynamic delta (LCP solver, articulated
 inertia, `buildConstrainedGroups`) is the pure physics cost of 3000 falling
@@ -424,8 +475,9 @@ Inclusive: `World::step` 68.5%; **`PhysicsPrivate::UpdateSim` 13.2%**,
 `UpdateSim`, 17% under `UpdatePhysics`); transport 3.5%; non rendering
 sensor `Update` calls 3.6%; SceneBroadcaster 1.2%; `entt::` 5.2%.
 
-![sensors runtime. The right hand third is `PhysicsPrivate::UpdateSim`
-querying link kinematics through gz-physics. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/runtime/sensors.svg>](figures/sensors_runtime.png){width=100% height=42%}
+```{=latex}
+\flamethumb{figures/thumb_sensors.png}{sensors runtime. The right hand third is \texttt{PhysicsPrivate::UpdateSim} querying link kinematics through gz-physics.}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/sensors.svg?s=UpdateSim|_Sp_counted_base}
+```
 
 **Findings**: this small world steps 47,000 times per second, so per step
 fixed costs are visible. The largest Gazebo owned item is `UpdateSim`: its
@@ -463,8 +515,9 @@ is its own body, 23% the per pair near callback in
 16.2%, `BoxedLcpConstraintSolver` 3.0%, gz-sim `Sensors::PostUpdate` 0.8%,
 ECM 0.6%.
 
-![jetty runtime. One tower: ODE's hash space broadphase under DART's
-`OdeCollisionDetector::collide`. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/runtime/jetty.svg>](figures/jetty_runtime.png){width=100% height=42%}
+```{=latex}
+\flamethumb{figures/thumb_jetty.png}{jetty runtime. One tower: ODE's hash space broadphase under DART's \texttt{OdeCollisionDetector::collide}.}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/jetty.svg?s=dxHashSpace|ignoresCollision}
+```
 
 **Findings**: jetty is now a pure broadphase benchmark. Its 408 collision
 geometries (360 boxes, 39 meshes, 46 cylinders, most of them static warehouse
@@ -495,8 +548,9 @@ process), NVIDIA driver 14.1%, `[[vdso]]` `clock_gettime` 4.9% (spinning in
 the driver), `gz::rendering::` 20.9%, `entt::` 6.3%, transport 2.7%
 (Zenoh 1.0%), ECM 1.4%.
 
-![gpu_lidar_sensor runtime. Simulation thread (left, DART) and the sensors
-render thread (right, `Ogre2GpuRays` and the NVIDIA driver). Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/runtime/gpu_lidar_sensor.svg>](figures/gpu_lidar_sensor_runtime.png){width=100% height=42%}
+```{=latex}
+\flamethumb{figures/thumb_gpu_lidar_sensor.png}{gpu\_lidar\_sensor runtime. Simulation thread (left, DART) and the sensors render thread (right, \texttt{Ogre2GpuRays} and the NVIDIA driver).}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/gpu_lidar_sensor.svg?s=GpuLidarSensor|libnvidia}
+```
 
 **Findings**: physics still dominates the process even though the lidar is
 the target. On the render thread the cost is the driver (render, readback,
@@ -529,8 +583,9 @@ Per sensor (inclusive of `Update`): camera 31.8%, RGBD camera 20.5%,
 thermal 8.9%, depth 2.3%, GPU lidar 1.5%. Physics is 29% of the process.
 `gz::transport::` is 3.5% and Zenoh proper 1.7%.
 
-![sensors_demo runtime. Render thread on the right (two thirds of the
-process), simulation thread on the left. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/runtime/sensors_demo.svg>](figures/sensors_demo_runtime.png){width=100% height=42%}
+```{=latex}
+\flamethumb{figures/thumb_sensors_demo.png}{sensors\_demo runtime. Render thread on the right (two thirds of the process), simulation thread on the left.}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/sensors_demo.svg?s=CameraSensor::Update|updateFromParentImpl}
+```
 
 **Findings**: this is the first run in which all six sensors are active
 (April subscribed to two non existent topics, see Methodology), so the
@@ -582,9 +637,9 @@ On the render thread alone: NVIDIA driver 35% plus 15% `clock_gettime`
 spinning inside it, `updateFromParentImpl` 14%, `memcpy` 9%, Forward
 Clustered light assignment 35% inclusive, `FillMsg` 4%, publishing 4%.
 
-![moving_robots_and_sensors runtime. Simulation thread (left) with DART and
-`UpdateSim`; sensors render thread (right) with the four rendering
-sensors. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/runtime/moving_robots_and_sensors.svg>](figures/moving_robots_and_sensors_runtime.png){width=100% height=42%}
+```{=latex}
+\flamethumb{figures/thumb_moving_robots_and_sensors.png}{moving\_robots\_and\_sensors runtime. Simulation thread (left) with DART and \texttt{UpdateSim}; sensors render thread (right) with the four rendering sensors.}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/moving_robots_and_sensors.svg?s=RgbdCameraSensor|UpdateSim|DiffDrive}
+```
 
 **Findings**: the mixed world is the slowest of the suite at 5.9x real
 time, and it is bounded by the simulation thread (64% of CPU, a full core).
