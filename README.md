@@ -160,6 +160,14 @@ mirrors what gz-sim's `BENCHMARK_server_run` publishes for that world.
 
 ### Real Time Factor Without perf
 
+Do not derive RTF or steps/s from a single stats snapshot. A free running
+server (`gz-sim-main -s -r` without `--iterations`) starts stepping before its
+entities are created and runs the empty world at hundreds of thousands of
+iterations per second for the first seconds, so `sim_time / real_time` from
+one snapshot overstates slow worlds by orders of magnitude. `gz_flamegraph.sh`
+now writes `<label>_stats_start.txt` (before the capture) and
+`<label>_stats.txt` (after) and prints the steady state rate between them.
+
 `SKIP_PERF=1` makes `gz_flamegraph.sh` run the world for the duration without
 attaching `perf` and only write `<label>_stats.txt`, a snapshot of
 `/world/<name>/stats` (sim time, real time, iterations). Every runtime capture

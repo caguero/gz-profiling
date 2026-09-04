@@ -40,17 +40,20 @@
   </p>
 
   <h2>Runtime Flamegraphs (30 s steady state, all threads)</h2>
-  <p class="note">RTF and steps/s come from an unprofiled pass (<code>SKIP_PERF=1</code>, <code>*_rtf.txt</code>);
-  "cores busy" is CPU time / 30 s during the perf capture.</p>
+  <p class="note">RTF and steps/s are the steady state rate between two <code>/world/*/stats</code> snapshots taken 10 s and
+  30 s after launch (re-measured 2026-09-04, <code>steady/results_unpinned.tsv</code>); "cores busy" is CPU time / 30 s during
+  the perf capture. <strong>Erratum:</strong> the first version of this page quoted rates from a single snapshot
+  (<code>*_rtf.txt</code>), which include the hundreds of thousands of empty iterations a free running server executes
+  before its entities are created; those figures overstated the 3k worlds by up to 50x. See the report's Methodology section.</p>
   <table>
-    <tr><th>World</th><th>Stress axis</th><th>RTF</th><th>Steps/s</th><th>Cores busy</th><th>Flamegraph</th><th>Hotspots</th></tr>
-    <tr><td>3k_shapes_static</td><td>3000 static models: framework + broadphase</td><td>12.0</td><td>12,023</td><td>1.00</td><td><a href="runtime/3k_shapes_static.svg">Open</a></td><td><a href="runtime/3k_shapes_static_hotspots.txt">txt</a></td></tr>
-    <tr><td>3k_shapes</td><td>3000 dynamic models: DART solver</td><td>12.7</td><td>12,732</td><td>1.00</td><td><a href="runtime/3k_shapes.svg">Open</a></td><td><a href="runtime/3k_shapes_hotspots.txt">txt</a></td></tr>
-    <tr><td>sensors</td><td>non rendering sensors: per step overhead</td><td>46.9</td><td>46,910</td><td>1.00</td><td><a href="runtime/sensors.svg">Open</a></td><td><a href="runtime/sensors_hotspots.txt">txt</a></td></tr>
-    <tr><td>jetty</td><td>complex scene: ODE broadphase (4 ms step)</td><td>24.3</td><td>6,063</td><td>1.00</td><td><a href="runtime/jetty.svg">Open</a></td><td><a href="runtime/jetty_hotspots.txt">txt</a></td></tr>
-    <tr><td>gpu_lidar_sensor</td><td>one GPU lidar, 1 subscriber</td><td>50.7</td><td>50,720</td><td>1.27</td><td><a href="runtime/gpu_lidar_sensor.svg">Open</a></td><td><a href="runtime/gpu_lidar_sensor_hotspots.txt">txt</a></td></tr>
-    <tr><td>sensors_demo</td><td>six rendering sensors, 8 subscribers</td><td>11.3</td><td>11,337</td><td>1.40</td><td><a href="runtime/sensors_demo.svg">Open</a></td><td><a href="runtime/sensors_demo_hotspots.txt">txt</a></td></tr>
-    <tr><td>moving_robots_and_sensors</td><td>PR #3846: 2 vehicles, arm, 10 sensors, 12 subscribers</td><td>5.9</td><td>5,908</td><td>1.49</td><td><a href="runtime/moving_robots_and_sensors.svg">Open</a></td><td><a href="runtime/moving_robots_and_sensors_hotspots.txt">txt</a></td></tr>
+    <tr><th>World</th><th>Stress axis</th><th>RTF (steady)</th><th>Steps/s (steady)</th><th>Cores busy</th><th>Flamegraph</th><th>Hotspots</th></tr>
+    <tr><td>3k_shapes_static</td><td>3000 static models: framework + broadphase</td><td>0.24</td><td>239</td><td>1.00</td><td><a href="runtime/3k_shapes_static.svg">Open</a></td><td><a href="runtime/3k_shapes_static_hotspots.txt">txt</a></td></tr>
+    <tr><td>3k_shapes</td><td>3000 dynamic models: DART solver</td><td>0.014</td><td>14</td><td>1.00</td><td><a href="runtime/3k_shapes.svg">Open</a></td><td><a href="runtime/3k_shapes_hotspots.txt">txt</a></td></tr>
+    <tr><td>sensors</td><td>non rendering sensors: per step overhead</td><td>50.6</td><td>50,644</td><td>1.00</td><td><a href="runtime/sensors.svg">Open</a></td><td><a href="runtime/sensors_hotspots.txt">txt</a></td></tr>
+    <tr><td>jetty</td><td>complex scene: ODE broadphase (4 ms step)</td><td>1.98</td><td>495</td><td>1.00</td><td><a href="runtime/jetty.svg">Open</a></td><td><a href="runtime/jetty_hotspots.txt">txt</a></td></tr>
+    <tr><td>gpu_lidar_sensor</td><td>one GPU lidar, 1 subscriber</td><td>50.2</td><td>50,156</td><td>1.27</td><td><a href="runtime/gpu_lidar_sensor.svg">Open</a></td><td><a href="runtime/gpu_lidar_sensor_hotspots.txt">txt</a></td></tr>
+    <tr><td>sensors_demo</td><td>six rendering sensors, 8 subscribers</td><td>5.3</td><td>5,335</td><td>1.40</td><td><a href="runtime/sensors_demo.svg">Open</a></td><td><a href="runtime/sensors_demo_hotspots.txt">txt</a></td></tr>
+    <tr><td>moving_robots_and_sensors</td><td>PR #3846: 2 vehicles, arm, 10 sensors, 12 subscribers</td><td>3.0</td><td>3,015</td><td>1.49</td><td><a href="runtime/moving_robots_and_sensors.svg">Open</a></td><td><a href="runtime/moving_robots_and_sensors_hotspots.txt">txt</a></td></tr>
   </table>
 
   <h2>Per Thread Flamegraphs</h2>
@@ -94,6 +97,28 @@
     <tr><td>moving_robots_and_sensors</td><td>2.47</td><td>0.79%</td><td>37.0%</td><td><a href="cache/moving_robots_and_sensors_cache_stats.txt">txt</a></td></tr>
   </table>
 
+
+
+  <h2 id="after1">Follow up: Priority 1 implemented (2026-09-04)</h2>
+  <p class="note">The server report's Priority 1 (per step bookkeeping around dartsim <code>WorldForwardStep</code>) was
+  implemented as two pull requests: gz-sim returns the cached step output by reference instead of copying it twice per step,
+  and dartsim skips the NaN check and the <code>ChangedWorldPoses</code> pass for static models. Steady state step rate
+  (two stats snapshots 20 s apart, median of two interleaved runs pinned to one P core), same worlds and build:</p>
+  <table>
+    <tr><th>World</th><th>Before</th><th>gz-sim PR only</th><th>Both PRs</th><th>Change</th></tr>
+    <tr><td>3k_shapes_static</td><td>254 steps/s</td><td>261 steps/s</td><td>462 steps/s</td><td><strong>1.82x</strong></td></tr>
+    <tr><td>sensors</td><td>49,729 steps/s</td><td>51,558 steps/s</td><td>51,982 steps/s</td><td>+4.5%</td></tr>
+    <tr><td>3k_shapes</td><td>14.6 steps/s</td><td>14.6 steps/s</td><td>14.8 steps/s</td><td>+1.7%</td></tr>
+    <tr><td>jetty</td><td>500 steps/s</td><td>502 steps/s</td><td>507 steps/s</td><td>+1.4%</td></tr>
+    <tr><td>moving_robots_and_sensors</td><td>1,833 steps/s</td><td>1,853 steps/s</td><td>1,840 steps/s</td><td>within noise</td></tr>
+  </table>
+  <table>
+    <tr><th>3k_shapes_static flamegraphs</th><th>Open</th></tr>
+    <tr><td>Before (baseline build, same day)</td><td><a href="after_priority1/3k_shapes_static_before.svg?s=getPositions|WorldForwardStep|CompositeData::Copy">Open</a></td></tr>
+    <tr><td>After both PRs (DART <code>World::step</code> is 90% of the process, was 63%)</td><td><a href="after_priority1/3k_shapes_static_after.svg?s=WorldForwardStep|Write">Open</a></td></tr>
+    <tr><td>Differential (blue = removed, red = grew in share)</td><td><a href="after_priority1/3k_shapes_static_diff.svg">Open</a></td></tr>
+    <tr><td>Raw steady state data (pinned interleaved runs, unpinned runs)</td><td><a href="steady/results.tsv">tsv</a> / <a href="steady/results_unpinned.tsv">tsv</a></td></tr>
+  </table>
 
   <h2 id="gui">GUI Process Profiling</h2>
   <p class="pdf">&#128196; <a href="findings_report_gui.pdf">GUI findings report (PDF)</a>

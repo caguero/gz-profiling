@@ -79,6 +79,21 @@ Two methodology changes with respect to April:
   July GUI study established this; the server scripts now do the same. As a
   consequence the weights in the `.folded` files are nanoseconds of CPU
   time rather than sample counts.
+- **Erratum (2026-09-04).** The first version of this report quoted RTF and
+  steps per second computed as `sim_time / real_time` from a single stats
+  snapshot taken 70 s after launch. That overstates the rate of every world
+  that takes more than a fraction of a second to create: a free running
+  server (`gz-sim-main -s -r` without `--iterations`) starts its loop before
+  the entities exist (`SimulationRunner::Run` only waits for asset creation
+  when an iteration count is given) and steps the still empty world at 200k
+  to 300k iterations per second for the first one to three seconds. For
+  `3k_shapes_static` that burst is about 900k iterations, against 239 real
+  steps per second afterwards, so the original table said 12,023 steps/s.
+  All RTF and steps/s figures in this version are the steady state rate
+  between two snapshots taken 10 s and 30 s after launch, measured on
+  2026-09-04 with the same build. Profiles, thread splits, cache counters
+  and loading times were taken after the burst and are unaffected. The
+  capture script now records both snapshots.
 - Sensor subscriber topics were audited. In April `sensors_demo` subscribed to
   `/rgbd_camera` and `/segmentation_camera`; neither topic exists (the RGBD
   sensor publishes `/rgbd_camera/{image,depth_image,points}` and there is no
@@ -189,19 +204,22 @@ next to the flamegraph.
 # Executive Summary
 
 The seven worlds were captured on 2026-09-01 (runtime and loading
-flamegraphs, an unprofiled RTF pass, per thread splits and cache counters).
+flamegraphs, per thread splits and cache counters); the step rates were
+re-measured on 2026-09-04 (see the erratum in the Methodology section).
 The headline numbers:
 
-| World | RTF (unprofiled) | Steps/s | Cores busy | Sim thread | Render thread | Loading wall clock |
+| World | RTF (steady state) | Steps/s | Cores busy | Sim thread | Render thread | Loading wall clock |
 |---|---:|---:|---:|---:|---:|---:|
-| 3k_shapes_static | 12.0 | 12,023 | 1.00 | 100% | none | 2.05 s |
-| 3k_shapes | 12.7 | 12,732 | 1.00 | 100% | none | 2.11 s |
-| sensors | 46.9 | 46,910 | 1.00 | 100% | none | 0.82 s |
-| jetty (4 ms step) | 24.3 | 6,063 | 1.00 | 99.9% | none | 1.55 s |
-| gpu_lidar_sensor | 50.7 | 50,720 | 1.27 | 73% | 26% | 1.22 s |
-| sensors_demo | 11.3 | 11,337 | 1.40 | 32% | 66% | 1.19 s |
-| moving_robots_and_sensors | 5.9 | 5,908 | 1.49 | 64% | 34% | 1.22 s |
+| 3k_shapes_static | 0.24 | 239 | 1.00 | 100% | none | 2.05 s |
+| 3k_shapes | 0.014 | 14 | 1.00 | 100% | none | 2.11 s |
+| sensors | 50.6 | 50,644 | 1.00 | 100% | none | 0.82 s |
+| jetty (4 ms step) | 1.98 | 495 | 1.00 | 99.9% | none | 1.55 s |
+| gpu_lidar_sensor | 50.2 | 50,156 | 1.27 | 73% | 26% | 1.22 s |
+| sensors_demo | 5.3 | 5,335 | 1.40 | 32% | 66% | 1.19 s |
+| moving_robots_and_sensors | 3.0 | 3,015 | 1.49 | 64% | 34% | 1.22 s |
 
+Steps/s and RTF are the steady state rate between two `/world/*/stats`
+snapshots taken 10 s and 30 s after launch (unpinned, dartsim, RTF 0).
 "Cores busy" is the CPU time the server consumed during the 30 s capture
 divided by 30 s. The simulation thread is always saturated; the rendering
 sensor thread adds a partial second core, and the Zenoh transport threads
@@ -258,8 +276,8 @@ never exceed 1.2% of the process.
    image and point cloud through shared memory; `zenoh_shm::watchdog` threads
    are visible in the per thread tables.
 7. **Per step fixed overhead of `EachNew<>` views is the one EnTT related
-   item.** In the fast stepping small worlds (`gpu_lidar_sensor` at 50k
-   steps/s, `sensors` at 47k) `entt::` frames sum to 5 to 6% of CPU, spread
+   item.** In the fast stepping small worlds (`gpu_lidar_sensor` and
+   `sensors` at about 50k steps/s) `entt::` frames sum to 5 to 6% of CPU, spread
    over dozens of `EachNew<...>` calls that each construct a view every
    iteration. It is a small, flat cost and does not grow with entity count.
 
@@ -362,15 +380,15 @@ frames discussed in the text).
 \begin{center}
 \begin{tabular}{p{4.2cm}p{2.6cm}c}
 \toprule
-World & RTF & Flamegraph \\
+World & Steady rate & Flamegraph \\
 \midrule
-3k\_shapes\_static & RTF 12.0 & \tthumb{figures/thumb_3k_shapes_static.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/3k_shapes_static.svg?s=dxHashSpace|getWorldTransform|WorldPose} \\[6pt]
-3k\_shapes & RTF 12.7 & \tthumb{figures/thumb_3k_shapes.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/3k_shapes.svg?s=BoxedLcp|buildConstrainedGroups} \\[6pt]
-sensors & RTF 46.9 & \tthumb{figures/thumb_sensors.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/sensors.svg?s=UpdateSim|_Sp_counted_base} \\[6pt]
-jetty & RTF 24.3 & \tthumb{figures/thumb_jetty.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/jetty.svg?s=dxHashSpace|ignoresCollision} \\[6pt]
-gpu\_lidar\_sensor & RTF 50.7 & \tthumb{figures/thumb_gpu_lidar_sensor.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/gpu_lidar_sensor.svg?s=GpuLidarSensor|libnvidia} \\[6pt]
-sensors\_demo & RTF 11.3 & \tthumb{figures/thumb_sensors_demo.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/sensors_demo.svg?s=CameraSensor::Update|updateFromParentImpl} \\[6pt]
-moving\_robots\_and\_sensors & RTF 5.9 & \tthumb{figures/thumb_moving_robots_and_sensors.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/moving_robots_and_sensors.svg?s=RgbdCameraSensor|UpdateSim|DiffDrive} \\[6pt]
+3k\_shapes\_static & 239 steps/s & \tthumb{figures/thumb_3k_shapes_static.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/3k_shapes_static.svg?s=dxHashSpace|getWorldTransform|WorldPose} \\[6pt]
+3k\_shapes & 14 steps/s & \tthumb{figures/thumb_3k_shapes.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/3k_shapes.svg?s=BoxedLcp|buildConstrainedGroups} \\[6pt]
+sensors & 50,644 steps/s & \tthumb{figures/thumb_sensors.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/sensors.svg?s=UpdateSim|_Sp_counted_base} \\[6pt]
+jetty & 495 steps/s & \tthumb{figures/thumb_jetty.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/jetty.svg?s=dxHashSpace|ignoresCollision} \\[6pt]
+gpu\_lidar\_sensor & 50,156 steps/s & \tthumb{figures/thumb_gpu_lidar_sensor.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/gpu_lidar_sensor.svg?s=GpuLidarSensor|libnvidia} \\[6pt]
+sensors\_demo & 5,335 steps/s & \tthumb{figures/thumb_sensors_demo.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/sensors_demo.svg?s=CameraSensor::Update|updateFromParentImpl} \\[6pt]
+moving\_robots\_and\_sensors & 3,015 steps/s & \tthumb{figures/thumb_moving_robots_and_sensors.png}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/moving_robots_and_sensors.svg?s=RgbdCameraSensor|UpdateSim|DiffDrive} \\[6pt]
 \bottomrule
 \end{tabular}
 \end{center}
@@ -380,7 +398,7 @@ All percentages are of the process's total CPU time during the 30 s capture
 (all threads). "Self" is the time in the function body itself, "inclusive"
 includes callees.
 
-## 3k_shapes_static (3000 static models, 1.00 cores, RTF 12.0)
+## 3k_shapes_static (3000 static models, 1.00 cores, 239 steps/s)
 
 **Purpose**: framework overhead with no dynamics. Every model is
 `<static>true</static>`, so DART has nothing to integrate.
@@ -426,7 +444,7 @@ Compared with April, `dxHashSpace::collide` went from 2.6% to 8.8% of the
 profile simply because the surrounding framework cost (54% of April's
 samples were demangling artifacts of ECS view templates) is gone.
 
-## 3k_shapes (3000 dynamic models, 1.00 cores, RTF 12.7)
+## 3k_shapes (3000 dynamic models, 1.00 cores, 14 steps/s)
 
 | Function | Self % | Category |
 |---|---:|---|
@@ -450,13 +468,14 @@ Gazebo owned: `UpdateSim` 0.62%, `ChangedLinks` 0.65%, `UpdateModelPose`
 ```
 
 **Findings**: the static to dynamic delta (LCP solver, articulated
-inertia, `buildConstrainedGroups`) is the pure physics cost of 3000 falling
-bodies and matches April. The dynamic world is slightly faster than the
-static one (12.7 vs 12.0 RTF) because the settled bodies sleep while the
-static world pays the full collision scan every step. Nothing in this world
-is actionable from gz-sim; it is a DART benchmark.
+inertia, `buildConstrainedGroups`) is the pure physics cost of 3000 resting
+bodies and matches April. At 14 steps per second (70 ms per step, 17x
+slower than the static variant) the dynamic world is by far the most
+expensive of the suite: DART does not put resting bodies to sleep, so the
+constraint solver runs on all 3000 contacts every step. Nothing in this
+world is actionable from gz-sim; it is a DART benchmark.
 
-## sensors (non rendering sensors, 1.00 cores, RTF 46.9)
+## sensors (non rendering sensors, 1.00 cores, 50,644 steps/s)
 
 | Function | Self % | Category |
 |---|---:|---|
@@ -479,8 +498,8 @@ sensor `Update` calls 3.6%; SceneBroadcaster 1.2%; `entt::` 5.2%.
 \flamethumb{figures/thumb_sensors.png}{sensors runtime. The right hand third is \texttt{PhysicsPrivate::UpdateSim} querying link kinematics through gz-physics.}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/sensors.svg?s=UpdateSim|_Sp_counted_base}
 ```
 
-**Findings**: this small world steps 47,000 times per second, so per step
-fixed costs are visible. The largest Gazebo owned item is `UpdateSim`: its
+**Findings**: this small world steps about 50,000 times per second, so per
+step fixed costs are visible. The largest Gazebo owned item is `UpdateSim`: its
 `Each<Pose, LinkTag, WorldLinearVelocity ...>` loops call
 `Link::FrameDataRelativeToWorld`, `WorldLinearAcceleration`, and similar
 gz-physics queries once per link per step. Each query goes through
@@ -493,7 +512,7 @@ frame math. April saw `Barrier::Wait`, `pthread_cond_wait` and
 `BaseView::ResetNewEntityState` here (about 4%); those are gone and
 `pthread_*` is 1.2%.
 
-## jetty (complex real world scene, 1.00 cores, RTF 24.3 at 4 ms steps)
+## jetty (complex real world scene, 1.00 cores, 495 steps/s, 4 ms steps)
 
 | Function | Self % | Category |
 |---|---:|---|
@@ -532,7 +551,7 @@ pair of refcount functions is 9% of the whole world. Only 15% of the filter
 time is the bitmask test itself. The April `stbi_*` texture
 decoding (6%) is gone.
 
-## gpu_lidar_sensor (one GPU lidar, 1.27 cores, RTF 50.7)
+## gpu_lidar_sensor (one GPU lidar, 1.27 cores, 50,156 steps/s)
 
 | Thread | Share | Top function |
 |---|---:|---|
@@ -559,7 +578,7 @@ fence wait) rather than OgreNext. `Lidar::Clamp` and `PublishLidarScan`
 owned leaves of note. `entt::` at 6.3% is the flat per step overhead of the
 `EachNew<>` calls in every system (see the cross reference section).
 
-## sensors_demo (six rendering sensors, 1.40 cores, RTF 11.3)
+## sensors_demo (six rendering sensors, 1.40 cores, 5,335 steps/s)
 
 | Thread | Share | Top function |
 |---|---:|---|
@@ -597,7 +616,7 @@ GUI's render thread. The driver cost is GPU sync. On the Gazebo side the
 image copies (`memcpy` 5.9%, `BaseCamera::Copy` 7% of the sensor time) and
 `PointCloudUtil::FillMsg` (2.9%) are the visible pieces.
 
-## moving_robots_and_sensors (PR #3846 world, 1.49 cores, RTF 5.9)
+## moving_robots_and_sensors (PR #3846 world, 1.49 cores, 3,015 steps/s)
 
 This is the new benchmark world: two driven vehicles, a two joint arm
 following a 1000 point trajectory, a contact sensor with the touch plugin, a
@@ -641,8 +660,8 @@ Clustered light assignment 35% inclusive, `FillMsg` 4%, publishing 4%.
 \flamethumb{figures/thumb_moving_robots_and_sensors.png}{moving\_robots\_and\_sensors runtime. Simulation thread (left) with DART and \texttt{UpdateSim}; sensors render thread (right) with the four rendering sensors.}{https://caguero.github.io/gz-profiling/2026-09-01/runtime/moving_robots_and_sensors.svg?s=RgbdCameraSensor|UpdateSim|DiffDrive}
 ```
 
-**Findings**: the mixed world is the slowest of the suite at 5.9x real
-time, and it is bounded by the simulation thread (64% of CPU, a full core).
+**Findings**: the mixed world runs at 3x real time and is bounded by the
+simulation thread (64% of CPU, a full core).
 Half of that thread is DART integrating the two vehicles and the arm (the
 LCP solver on wheel contacts), and the Gazebo owned remainder is the same
 `UpdateSim` kinematics query pattern seen in `sensors` (8%). The controllers
@@ -733,18 +752,41 @@ Interpretation:
 
 # Optimization Recommendations (Gazebo owned, priority ranked)
 
-## Priority 1: Stop computing `WorldPoses` when `ChangedWorldPoses` is consumed
+## Priority 1: Remove the per step bookkeeping around `WorldForwardStep` (done)
 
-`SimulationFeatures::WorldForwardStep` (gz-physics dartsim) calls
-`WriteRequiredData`, which fills `WorldPoses` for every link, and then
-`Write(ChangedWorldPoses&)`, which queries every link's transform again and
-compares it with the previous pose. gz-sim's `PhysicsPrivate::ChangedLinks`
-only reads `ChangedWorldPoses`. Options: make gz-sim request
-`ChangedWorldPoses` as the required output and drop `WorldPoses` from
-`MinimumFeatureList`'s output specification, or compute the transform once
-and fill both containers from it, reusing the `WorldPoses` vector instead of
-reallocating it. Expected gain: about 10% of the static world and 2 to 4% of
-dynamic worlds, and it removes 3000 allocations per step.
+*Revised 2026-09-04.* The first version of this section blamed
+`SimulationFeatures::WorldForwardStep` for writing `WorldPoses` for every
+link on every step. That pass runs only once for gz-sim: `WriteRequiredData`
+defaults to writing un-queried entries only, and gz-sim's cached
+`stepOutput` (gz-sim #3685) is never queried for `WorldPoses`. What the
+profile of `3k_shapes_static` actually contains, per step, is:
+
+| Cost inside `WorldForwardStep` | % of process CPU |
+|---|---:|
+| NaN check: `MetaSkeleton::getPositions()` for every model (a heap allocated vector per model, then a copy into `lastGoodPositions`) | 16.1 |
+| `Write(ChangedWorldPoses &)`: `getWorldTransform` + compare for every link | ~7 |
+| Two deep copies of the `ForwardStep::Output` in gz-sim (`Step` returned the cached member by value, `Update` copy assigned it) | 3.7 |
+
+DART does not integrate immobile skeletons, which is how dartsim represents
+static models, so none of this work can change anything for them. The fix
+landed as two pull requests: gz-sim returns the cached output by reference
+and hands it to `ChangedLinks` (an empty output while paused keeps the ECM
+fallback), and dartsim skips immobile skeletons in the NaN check (reading
+DOF positions into a preallocated buffer for the others), marks links of
+immobile skeletons as settled after one unchanged report and skips them
+until a pose command, a static toggle or a joint change invalidates them
+(one epoch counter), and skips the fluid added mass loop when no link uses
+it. Result on this machine, steady state, same worlds:
+
+| World | before | after | change |
+|---|---:|---:|---:|
+| 3k_shapes_static | 239 steps/s | 440 steps/s | 1.85x |
+| sensors | 50.6k steps/s | 51.6k steps/s | +2% |
+| jetty | 495 steps/s | 506 steps/s | +2% |
+| 3k_shapes, moving_robots_and_sensors | | | within noise |
+
+In the static world's profile DART's `World::step` goes from 63% to 90% of
+the process. What remains (Priority 4) is the broadphase itself.
 
 ## Priority 2: Remove `EntityPtr` refcount traffic from the per link kinematics queries
 

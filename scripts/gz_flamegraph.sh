@@ -63,7 +63,7 @@ if [[ ! -f "$FLAMEGRAPH_DIR/flamegraph.pl" ]]; then
     echo "  Set FLAMEGRAPH_DIR or clone https://github.com/brendangregg/FlameGraph" >&2
     exit 1
 fi
-if [[ "$(cat /proc/sys/kernel/perf_event_paranoid)" -gt 1 ]]; then
+if [[ "${SKIP_PERF:-0}" != "1" && "$(cat /proc/sys/kernel/perf_event_paranoid)" -gt 1 ]]; then
     echo "ERROR: perf_event_paranoid=$(cat /proc/sys/kernel/perf_event_paranoid), need <= 1" >&2
     echo "  Run: sudo sysctl kernel.perf_event_paranoid=1" >&2
     exit 1
@@ -138,6 +138,17 @@ if [[ -x "$SETUP_SCRIPT" ]]; then
     sleep 2
 fi
 
+# Snapshot the world statistics before the capture. The steady state step
+# rate is the difference between this snapshot and the one taken after the
+# capture: a free running server steps an empty world at hundreds of
+# thousands of iterations per second while its entities are still being
+# created, so sim_time / real_time from the final snapshot alone overstates
+# the RTF of worlds that take a while to create.
+STATS_TOPIC=$(gz topic -l 2>/dev/null | grep -m1 '^/world/.*/stats$' || true)
+if [[ -n "$STATS_TOPIC" ]]; then
+    timeout 5 gz topic -e -n 1 -t "$STATS_TOPIC" > "$OUTPUT_DIR/${LABEL}_stats_start.txt" 2>/dev/null || true
+fi
+
 # Capture with perf (or, with SKIP_PERF=1, just let the world run so the
 # stats snapshot below gives an unperturbed real time factor)
 if [[ "${SKIP_PERF:-0}" == "1" ]]; then
@@ -150,11 +161,26 @@ else
         sleep "$DURATION" 2>&1 | tail -3
 fi
 
-# Snapshot the world statistics (sim time, real time, iterations, RTF)
-STATS_TOPIC=$(gz topic -l 2>/dev/null | grep -m1 '^/world/.*/stats$' || true)
+# Snapshot the world statistics again and report the steady state rate
 if [[ -n "$STATS_TOPIC" ]]; then
     timeout 5 gz topic -e -n 1 -t "$STATS_TOPIC" > "$OUTPUT_DIR/${LABEL}_stats.txt" 2>/dev/null || true
     echo "  Stats: $(tr -s ' \n' ' ' < "$OUTPUT_DIR/${LABEL}_stats.txt" | cut -c1-160)"
+    python3 - "$OUTPUT_DIR/${LABEL}_stats_start.txt" "$OUTPUT_DIR/${LABEL}_stats.txt" <<'PY' || true
+import re, sys
+def parse(path):
+    s = open(path).read()
+    def g(k):
+        m = re.search(k + r' \{\s*(?:sec: (\d+))?\s*(?:nsec: (\d+))?', s)
+        return int(m.group(1) or 0) + int(m.group(2) or 0) / 1e9 if m else None
+    it = re.search(r'iterations: (\d+)', s)
+    return (int(it.group(1)) if it else None, g('real_time'), g('sim_time'))
+a, b = parse(sys.argv[1]), parse(sys.argv[2])
+if None in a or None in b:
+    sys.exit(0)
+di, dr, ds = b[0] - a[0], b[1] - a[1], b[2] - a[2]
+if dr > 0:
+    print(f"  Steady state over {dr:.1f} s: {di / dr:.0f} steps/s, RTF {ds / dr:.2f}")
+PY
 fi
 
 # Cleanup

@@ -1,0 +1,1723 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="574" onload="init(evt)" viewBox="0 0 1200 574" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="574.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >3k_shapes_static</text>
+<text id="subtitle" x="600.00" y="48" >2026-09-05 00:16, 30s @ 997Hz (headless)</text>
+<text id="details" x="10.00" y="557" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="557" > </text>
+<g id="frames">
+<g >
+<title>operator= (26,078,234 samples, 0.09%)</title><rect x="1186.8" y="189" width="1.1" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1189.84" y="199.5" ></text>
+</g>
+<g >
+<title>operator (407,221,654 samples, 1.36%)</title><rect x="1167.6" y="317" width="16.0" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="1170.55" y="327.5" ></text>
+</g>
+<g >
+<title>destroy&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (4,012,036 samples, 0.01%)</title><rect x="1184.4" y="301" width="0.2" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="1187.40" y="311.5" ></text>
+</g>
+<g >
+<title>unlink_chunk (731,193,561 samples, 2.44%)</title><rect x="869.6" y="157" width="28.7" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="872.57" y="167.5" >un..</text>
+</g>
+<g >
+<title>dGeomGetBodyNext (5,015,045 samples, 0.02%)</title><rect x="401.5" y="173" width="0.2" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="404.48" y="183.5" ></text>
+</g>
+<g >
+<title>Topic (4,012,036 samples, 0.01%)</title><rect x="11.0" y="333" width="0.2" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="14.03" y="343.5" ></text>
+</g>
+<g >
+<title>__memmove_avx_unaligned_erms (31,093,279 samples, 0.10%)</title><rect x="732.7" y="189" width="1.2" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="735.68" y="199.5" ></text>
+</g>
+<g >
+<title>__libc_free (9,027,081 samples, 0.03%)</title><rect x="732.3" y="189" width="0.4" height="15.0" fill="rgb(223,85,20)" rx="2" ry="2" />
+<text  x="735.32" y="199.5" ></text>
+</g>
+<g >
+<title>Interface&lt;gz::physics::ForwardStep&gt; (5,015,045 samples, 0.02%)</title><rect x="65.8" y="317" width="0.2" height="15.0" fill="rgb(249,206,49)" rx="2" ry="2" />
+<text  x="68.82" y="327.5" ></text>
+</g>
+<g >
+<title>CreateModelEntities (4,012,036 samples, 0.01%)</title><rect x="11.8" y="333" width="0.2" height="15.0" fill="rgb(245,188,45)" rx="2" ry="2" />
+<text  x="14.81" y="343.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_increment (3,009,027 samples, 0.01%)</title><rect x="1188.0" y="349" width="0.1" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="1191.03" y="359.5" ></text>
+</g>
+<g >
+<title>__memmove_avx_unaligned_erms (8,024,072 samples, 0.03%)</title><rect x="167.5" y="269" width="0.3" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="170.49" y="279.5" ></text>
+</g>
+<g >
+<title>run&lt;Eigen::Diagonal&lt;const Eigen::Block&lt;const Eigen::Matrix&lt;double, 4, 4&gt;, 3, 3, false&gt;, 0&gt; &gt; (93,279,837 samples, 0.31%)</title><rect x="1119.0" y="189" width="3.7" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1122.03" y="199.5" ></text>
+</g>
+<g >
+<title>MakeCloneable (1,352,056,132 samples, 4.51%)</title><rect x="12.5" y="237" width="53.2" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="15.52" y="247.5" >MakeC..</text>
+</g>
+<g >
+<title>Run (29,954,863,785 samples, 99.85%)</title><rect x="10.2" y="413" width="1178.2" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="13.20" y="423.5" >Run</text>
+</g>
+<g >
+<title>[libdart-collision-ode.so.6.13.2] (3,050,150,369 samples, 10.17%)</title><rect x="611.3" y="205" width="120.0" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="614.28" y="215.5" >[libdart-colli..</text>
+</g>
+<g >
+<title>_int_free (25,075,225 samples, 0.08%)</title><rect x="1093.1" y="189" width="1.0" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="1096.15" y="199.5" ></text>
+</g>
+<g >
+<title>dGeomMoved (17,051,153 samples, 0.06%)</title><rect x="404.6" y="173" width="0.6" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="407.56" y="183.5" ></text>
+</g>
+<g >
+<title>Quaternion&lt;Eigen::Block&lt;const Eigen::Matrix&lt;double, 4, 4&gt;, 3, 3, false&gt; &gt; (203,610,827 samples, 0.68%)</title><rect x="1114.7" y="285" width="8.0" height="15.0" fill="rgb(211,29,6)" rx="2" ry="2" />
+<text  x="1117.69" y="295.5" ></text>
+</g>
+<g >
+<title>__ldexp (34,102,306 samples, 0.11%)</title><rect x="736.0" y="189" width="1.3" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="738.95" y="199.5" ></text>
+</g>
+<g >
+<title>dRfromQ (193,580,737 samples, 0.65%)</title><rect x="405.2" y="173" width="7.6" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="408.23" y="183.5" ></text>
+</g>
+<g >
+<title>Copy (26,078,234 samples, 0.09%)</title><rect x="1186.8" y="205" width="1.1" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="1189.84" y="215.5" ></text>
+</g>
+<g >
+<title>dxSafeNormalize4 (408,224,663 samples, 1.36%)</title><rect x="412.8" y="173" width="16.1" height="15.0" fill="rgb(227,104,24)" rx="2" ry="2" />
+<text  x="415.84" y="183.5" ></text>
+</g>
+<g >
+<title>__libc_malloc (1,241,725,142 samples, 4.14%)</title><rect x="12.6" y="77" width="48.8" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="15.56" y="87.5" >__li..</text>
+</g>
+<g >
+<title>dart::collision::CollisionObject::getTransform (281,845,529 samples, 0.94%)</title><rect x="429.1" y="189" width="11.0" height="15.0" fill="rgb(243,177,42)" rx="2" ry="2" />
+<text  x="432.06" y="199.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Joint::getActuatorType (13,039,117 samples, 0.04%)</title><rect x="974.1" y="253" width="0.5" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="977.12" y="263.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::clearCollidingBodies (69,207,621 samples, 0.23%)</title><rect x="1004.5" y="269" width="2.7" height="15.0" fill="rgb(231,120,28)" rx="2" ry="2" />
+<text  x="1007.46" y="279.5" ></text>
+</g>
+<g >
+<title>operator new (1,241,725,142 samples, 4.14%)</title><rect x="12.6" y="93" width="48.8" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="15.56" y="103.5" >oper..</text>
+</g>
+<g >
+<title>free@plt (6,018,054 samples, 0.02%)</title><rect x="1094.1" y="205" width="0.3" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="1097.13" y="215.5" ></text>
+</g>
+<g >
+<title>non-virtual thunk to dart::dynamics::ShapeNode::asShapeNode (14,042,126 samples, 0.05%)</title><rect x="728.9" y="157" width="0.5" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="731.89" y="167.5" ></text>
+</g>
+<g >
+<title>WorldForwardStep (26,144,432,594 samples, 87.15%)</title><rect x="66.0" y="317" width="1028.4" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="69.02" y="327.5" >WorldForwardStep</text>
+</g>
+<g >
+<title>operator= (44,132,396 samples, 0.15%)</title><rect x="1186.2" y="301" width="1.7" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1189.17" y="311.5" ></text>
+</g>
+<g >
+<title>run (77,231,693 samples, 0.26%)</title><rect x="1089.6" y="173" width="3.0" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1092.56" y="183.5" ></text>
+</g>
+<g >
+<title>run (155,466,395 samples, 0.52%)</title><rect x="1108.6" y="189" width="6.1" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1111.57" y="199.5" ></text>
+</g>
+<g >
+<title>_M_create_node&lt;std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (3,009,027 samples, 0.01%)</title><rect x="12.2" y="237" width="0.1" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="15.17" y="247.5" ></text>
+</g>
+<g >
+<title>~DataEntry (4,012,036 samples, 0.01%)</title><rect x="1184.4" y="253" width="0.2" height="15.0" fill="rgb(234,133,31)" rx="2" ry="2" />
+<text  x="1187.40" y="263.5" ></text>
+</g>
+<g >
+<title>call_assignment&lt;Eigen::Matrix&lt;double, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1&gt;, Eigen::internal::assign_op&lt;double, double&gt; &gt; (121,364,089 samples, 0.40%)</title><rect x="1087.8" y="237" width="4.8" height="15.0" fill="rgb(239,160,38)" rx="2" ry="2" />
+<text  x="1090.82" y="247.5" ></text>
+</g>
+<g >
+<title>Matrix&lt;Eigen::Block&lt;const Eigen::Matrix&lt;double, 4, 4&gt;, 3, 1, true&gt; &gt; (155,466,395 samples, 0.52%)</title><rect x="1108.6" y="285" width="6.1" height="15.0" fill="rgb(205,4,0)" rx="2" ry="2" />
+<text  x="1111.57" y="295.5" ></text>
+</g>
+<g >
+<title>malloc_consolidate (550,651,941 samples, 1.84%)</title><rect x="760.5" y="157" width="21.6" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="763.49" y="167.5" >m..</text>
+</g>
+<g >
+<title>gz::plugin::Plugin::PrivateQueryInterface (4,012,036 samples, 0.01%)</title><rect x="65.9" y="269" width="0.1" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="68.86" y="279.5" ></text>
+</g>
+<g >
+<title>coeff (4,012,036 samples, 0.01%)</title><rect x="1119.1" y="109" width="0.2" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="1122.11" y="119.5" ></text>
+</g>
+<g >
+<title>Topic (3,009,027 samples, 0.01%)</title><rect x="10.3" y="349" width="0.1" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="13.32" y="359.5" ></text>
+</g>
+<g >
+<title>coeff (4,012,036 samples, 0.01%)</title><rect x="1119.1" y="125" width="0.2" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="1122.11" y="135.5" ></text>
+</g>
+<g >
+<title>uninitialized_copy&lt;__gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, gz::physics::WorldPose*&gt; (33,099,297 samples, 0.11%)</title><rect x="1184.8" y="173" width="1.3" height="15.0" fill="rgb(226,100,23)" rx="2" ry="2" />
+<text  x="1187.79" y="183.5" ></text>
+</g>
+<g >
+<title>run (93,279,837 samples, 0.31%)</title><rect x="1119.0" y="173" width="3.7" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1122.03" y="183.5" ></text>
+</g>
+<g >
+<title>call_dense_assignment_loop&lt;Eigen::Matrix&lt;double, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1&gt;, Eigen::internal::assign_op&lt;double, double&gt; &gt; (121,364,089 samples, 0.40%)</title><rect x="1087.8" y="189" width="4.8" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="1090.82" y="199.5" ></text>
+</g>
+<g >
+<title>_M_drop_node (4,012,036 samples, 0.01%)</title><rect x="1184.4" y="333" width="0.2" height="15.0" fill="rgb(226,96,23)" rx="2" ry="2" />
+<text  x="1187.40" y="343.5" ></text>
+</g>
+<g >
+<title>SpecifyData (4,012,036 samples, 0.01%)</title><rect x="12.0" y="349" width="0.1" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="14.97" y="359.5" ></text>
+</g>
+<g >
+<title>sum (93,279,837 samples, 0.31%)</title><rect x="1119.0" y="221" width="3.7" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1122.03" y="231.5" ></text>
+</g>
+<g >
+<title>_int_malloc (7,021,063 samples, 0.02%)</title><rect x="734.7" y="157" width="0.3" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="737.73" y="167.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::getDof (1,119,358,044 samples, 3.73%)</title><rect x="275.5" y="285" width="44.1" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="278.55" y="295.5" >dart..</text>
+</g>
+<g >
+<title>dart::constraint::ConstraintSolver::solve (19,069,207,108 samples, 63.56%)</title><rect x="323.8" y="285" width="750.1" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="326.80" y="295.5" >dart::constraint::ConstraintSolver::solve</text>
+</g>
+<g >
+<title>coeffByOuterInner (87,261,783 samples, 0.29%)</title><rect x="1119.3" y="125" width="3.4" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1122.26" y="135.5" ></text>
+</g>
+<g >
+<title>dxGeom::AABBTest (16,048,144 samples, 0.05%)</title><rect x="733.9" y="189" width="0.6" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="736.90" y="199.5" ></text>
+</g>
+<g >
+<title>operator= (121,364,089 samples, 0.40%)</title><rect x="1087.8" y="285" width="4.8" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1090.82" y="295.5" ></text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (408,224,663 samples, 1.36%)</title><rect x="152.3" y="285" width="16.1" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="155.30" y="295.5" ></text>
+</g>
+<g >
+<title>all (29,999,999,190 samples, 100%)</title><rect x="10.0" y="525" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="535.5" ></text>
+</g>
+<g >
+<title>ignoresCollision (3,001,002,928 samples, 10.00%)</title><rect x="613.2" y="189" width="118.1" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="616.22" y="199.5" >ignoresCollision</text>
+</g>
+<g >
+<title>__libc_start_call_main (29,954,863,785 samples, 99.85%)</title><rect x="10.2" y="461" width="1178.2" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="13.20" y="471.5" >__libc_start_call_main</text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (10,030,090 samples, 0.03%)</title><rect x="1188.9" y="477" width="0.4" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1191.90" y="487.5" ></text>
+</g>
+<g >
+<title>operator delete (12,036,108 samples, 0.04%)</title><rect x="834.6" y="205" width="0.5" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="837.62" y="215.5" ></text>
+</g>
+<g >
+<title>MapBase (38,114,342 samples, 0.13%)</title><rect x="1123.2" y="221" width="1.5" height="15.0" fill="rgb(217,58,13)" rx="2" ry="2" />
+<text  x="1126.21" y="231.5" ></text>
+</g>
+<g >
+<title>Copy (27,081,243 samples, 0.09%)</title><rect x="1186.8" y="253" width="1.1" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="1189.84" y="263.5" ></text>
+</g>
+<g >
+<title>dart::collision::detail::OdeGeom::updateEngineData (6,018,054 samples, 0.02%)</title><rect x="440.1" y="189" width="0.3" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="443.14" y="199.5" ></text>
+</g>
+<g >
+<title>dart::collision::CollisionObject::getShapeFrame (24,072,216 samples, 0.08%)</title><rect x="729.4" y="173" width="1.0" height="15.0" fill="rgb(236,146,35)" rx="2" ry="2" />
+<text  x="732.44" y="183.5" ></text>
+</g>
+<g >
+<title>_Construct&lt;gz::physics::WorldPose, const gz::physics::WorldPose&amp;&gt; (107,321,963 samples, 0.36%)</title><rect x="61.5" y="125" width="4.2" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="64.48" y="135.5" ></text>
+</g>
+<g >
+<title>call_assignment&lt;Eigen::Matrix&lt;double, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1&gt; &gt; (121,364,089 samples, 0.40%)</title><rect x="1087.8" y="253" width="4.8" height="15.0" fill="rgb(247,196,47)" rx="2" ry="2" />
+<text  x="1090.82" y="263.5" ></text>
+</g>
+<g >
+<title>operator++ (3,009,027 samples, 0.01%)</title><rect x="1188.0" y="365" width="0.1" height="15.0" fill="rgb(249,203,48)" rx="2" ry="2" />
+<text  x="1191.03" y="375.5" ></text>
+</g>
+<g >
+<title>collide (13,431,293,519 samples, 44.77%)</title><rect x="371.0" y="253" width="528.3" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="373.98" y="263.5" >collide</text>
+</g>
+<g >
+<title>CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt;, const std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt;&amp;&gt; (16,048,144 samples, 0.05%)</title><rect x="1186.2" y="269" width="0.6" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1189.21" y="279.5" ></text>
+</g>
+<g >
+<title>vector (1,351,053,123 samples, 4.50%)</title><rect x="12.6" y="205" width="53.1" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="15.56" y="215.5" >vector</text>
+</g>
+<g >
+<title>coeff (155,466,395 samples, 0.52%)</title><rect x="1108.6" y="125" width="6.1" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="1111.57" y="135.5" ></text>
+</g>
+<g >
+<title>~pair (4,012,036 samples, 0.01%)</title><rect x="1184.4" y="269" width="0.2" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="1187.40" y="279.5" ></text>
+</g>
+<g >
+<title>_start (29,954,863,785 samples, 99.85%)</title><rect x="10.2" y="493" width="1178.2" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="13.20" y="503.5" >_start</text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::getSkeleton (759,277,813 samples, 2.53%)</title><rect x="631.9" y="157" width="29.8" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
+<text  x="634.88" y="167.5" >da..</text>
+</g>
+<g >
+<title>__dynamic_cast (15,045,135 samples, 0.05%)</title><rect x="963.5" y="205" width="0.6" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="966.51" y="215.5" ></text>
+</g>
+<g >
+<title>dBodySetQuaternion@plt (4,012,036 samples, 0.01%)</title><rect x="428.9" y="189" width="0.2" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="431.90" y="199.5" ></text>
+</g>
+<g >
+<title>Step (29,372,115,556 samples, 97.91%)</title><rect x="12.1" y="349" width="1155.3" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="15.13" y="359.5" >Step</text>
+</g>
+<g >
+<title>HasSubscriber (3,009,027 samples, 0.01%)</title><rect x="10.9" y="333" width="0.1" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="13.87" y="343.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::isCollidable (254,764,286 samples, 0.85%)</title><rect x="661.7" y="157" width="10.1" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="664.74" y="167.5" ></text>
+</g>
+<g >
+<title>operator (4,012,036 samples, 0.01%)</title><rect x="1184.4" y="221" width="0.2" height="15.0" fill="rgb(254,228,54)" rx="2" ry="2" />
+<text  x="1187.40" y="231.5" ></text>
+</g>
+<g >
+<title>Copy (16,048,144 samples, 0.05%)</title><rect x="1186.2" y="237" width="0.6" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="1189.21" y="247.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Node::getBodyNodePtr (1,205,616,818 samples, 4.02%)</title><rect x="671.8" y="157" width="47.4" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="674.76" y="167.5" >dart..</text>
+</g>
+<g >
+<title>__scalbn (11,033,099 samples, 0.04%)</title><rect x="736.9" y="173" width="0.4" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="739.86" y="183.5" ></text>
+</g>
+<g >
+<title>all (12,036,108 samples, 0.04%)</title><rect x="1078.3" y="285" width="0.5" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="1081.31" y="295.5" ></text>
+</g>
+<g >
+<title>malloc@plt (7,021,063 samples, 0.02%)</title><rect x="167.8" y="269" width="0.3" height="15.0" fill="rgb(246,192,46)" rx="2" ry="2" />
+<text  x="170.81" y="279.5" ></text>
+</g>
+<g >
+<title>operator= (26,078,234 samples, 0.09%)</title><rect x="1186.8" y="173" width="1.1" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1189.84" y="183.5" ></text>
+</g>
+<g >
+<title>EachNew&lt;gz::sim::v11::components::Component&lt;std::add_lvalue_reference&lt;void&gt;, gz::sim::v11::components::CollisionTag, gz::sim::v11::serializers::DefaultSerializer&lt;std::add_lvalue_reference&lt;void&gt; &gt; &gt;, gz::sim::v11::components::Component&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, gz::sim::v11::components::NameTag, gz::sim::v11::serializers::StringSerializer&gt;, gz::sim::v11::components::Component&lt;gz::math::v10::Pose3&lt;double&gt;, gz::sim::v11::components::PoseTag, gz::sim::v11::serializers::DefaultSerializer&lt;gz::math::v10::Pose3&lt;double&gt; &gt; &gt;, gz::sim::v11::components::Component&lt;sdf::v17::Geometry, gz::sim::v11::components::GeometryTag, gz::sim::v11::serializers::ComponentToMsgSerializer&lt;sdf::v17::Geometry, gz::msgs::Geometry&gt; &gt;, gz::sim::v11::components::Component&lt;sdf::v17::Collision, gz::sim::v11::components::CollisionElementTag, gz::sim::v11::serializers::ComponentToMsgSerializer&lt;sdf::v17::Collision, gz::msgs::Collision&gt; &gt;, gz::sim::v11::components::Component&lt;long unsigned int, gz::sim::v11::components::ParentEntityTag, gz::sim::v11::serializers::DefaultSerializer&lt;long unsigned int&gt; &gt;, gz::sim::v11::systems::PhysicsPrivate::CreateCollisionEntities (4,012,036 samples, 0.01%)</title><rect x="11.4" y="317" width="0.2" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="14.42" y="327.5" ></text>
+</g>
+<g >
+<title>dart::collision::BodyNodeCollisionFilter::ignoresCollision (11,033,099 samples, 0.04%)</title><rect x="1189.6" y="477" width="0.4" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="1192.57" y="487.5" ></text>
+</g>
+<g >
+<title>__libc_malloc (12,036,108 samples, 0.04%)</title><rect x="734.6" y="173" width="0.5" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="737.61" y="183.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Frame::getWorldTransform (1,079,237,684 samples, 3.60%)</title><rect x="1124.8" y="301" width="42.4" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="1127.79" y="311.5" >dar..</text>
+</g>
+<g >
+<title>CreateCollisionEntities (4,012,036 samples, 0.01%)</title><rect x="11.4" y="333" width="0.2" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="14.42" y="343.5" ></text>
+</g>
+<g >
+<title>Each&lt;gz::sim::v11::components::Component&lt;gz::math::v10::Vector3&lt;double&gt;, gz::sim::v11::components::GravityTag, gz::sim::v11::serializers::DefaultSerializer&lt;gz::math::v10::Vector3&lt;double&gt; &gt; &gt;, gz::sim::v11::systems::PhysicsPrivate::UpdatePhysics (407,221,654 samples, 1.36%)</title><rect x="1167.6" y="333" width="16.0" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="1170.55" y="343.5" ></text>
+</g>
+<g >
+<title>uninitialized_copy&lt;__gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, gz::physics::WorldPose*&gt; (109,327,981 samples, 0.36%)</title><rect x="61.4" y="173" width="4.3" height="15.0" fill="rgb(226,100,23)" rx="2" ry="2" />
+<text  x="64.41" y="183.5" ></text>
+</g>
+<g >
+<title>_M_allocate (1,241,725,142 samples, 4.14%)</title><rect x="12.6" y="141" width="48.8" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="15.56" y="151.5" >_M_a..</text>
+</g>
+<g >
+<title>resize_if_allowed&lt;Eigen::Matrix&lt;double, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1&gt;, double, double&gt; (44,132,396 samples, 0.15%)</title><rect x="1087.8" y="173" width="1.8" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="1090.82" y="183.5" ></text>
+</g>
+<g >
+<title>_M_allocate_and_copy&lt;__gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt; &gt; (33,099,297 samples, 0.11%)</title><rect x="1184.8" y="205" width="1.3" height="15.0" fill="rgb(225,92,22)" rx="2" ry="2" />
+<text  x="1187.79" y="215.5" ></text>
+</g>
+<g >
+<title>CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt;, const std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt;&amp;&gt; (39,117,351 samples, 0.13%)</title><rect x="1184.6" y="285" width="1.6" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1187.63" y="295.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::setColliding (3,009,027 samples, 0.01%)</title><rect x="1007.1" y="253" width="0.1" height="15.0" fill="rgb(218,62,15)" rx="2" ry="2" />
+<text  x="1010.06" y="263.5" ></text>
+</g>
+<g >
+<title>UpdateSystems (29,936,809,623 samples, 99.79%)</title><rect x="10.6" y="381" width="1177.5" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="13.63" y="391.5" >UpdateSystems</text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::clearConstraintImpulses (7,021,063 samples, 0.02%)</title><rect x="1189.3" y="493" width="0.3" height="15.0" fill="rgb(223,82,19)" rx="2" ry="2" />
+<text  x="1192.29" y="503.5" ></text>
+</g>
+<g >
+<title>__copy_move_a1&lt;false, const gz::physics::WorldPose*, gz::physics::WorldPose*&gt; (26,078,234 samples, 0.09%)</title><rect x="1186.8" y="125" width="1.1" height="15.0" fill="rgb(218,62,15)" rx="2" ry="2" />
+<text  x="1189.84" y="135.5" ></text>
+</g>
+<g >
+<title>insert&lt;std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (3,009,027 samples, 0.01%)</title><rect x="12.2" y="301" width="0.1" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="15.17" y="311.5" ></text>
+</g>
+<g >
+<title>~unique_ptr (4,012,036 samples, 0.01%)</title><rect x="1184.4" y="237" width="0.2" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="1187.40" y="247.5" ></text>
+</g>
+<g >
+<title>conditional_aligned_delete_auto&lt;double, true&gt; (45,135,405 samples, 0.15%)</title><rect x="1092.6" y="253" width="1.8" height="15.0" fill="rgb(250,208,49)" rx="2" ry="2" />
+<text  x="1095.59" y="263.5" ></text>
+</g>
+<g >
+<title>UpdateCurrentInfo (5,015,045 samples, 0.02%)</title><rect x="1188.2" y="397" width="0.2" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="1191.19" y="407.5" ></text>
+</g>
+<g >
+<title>dGeomGetData@plt (8,024,072 samples, 0.03%)</title><rect x="612.5" y="189" width="0.3" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="615.51" y="199.5" ></text>
+</g>
+<g >
+<title>Equal (39,117,351 samples, 0.13%)</title><rect x="1107.0" y="301" width="1.6" height="15.0" fill="rgb(207,12,3)" rx="2" ry="2" />
+<text  x="1110.03" y="311.5" ></text>
+</g>
+<g >
+<title>run (155,466,395 samples, 0.52%)</title><rect x="1108.6" y="173" width="6.1" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1111.57" y="183.5" ></text>
+</g>
+<g >
+<title>HasConnections (6,018,054 samples, 0.02%)</title><rect x="10.3" y="365" width="0.3" height="15.0" fill="rgb(217,58,14)" rx="2" ry="2" />
+<text  x="13.32" y="375.5" ></text>
+</g>
+<g >
+<title>StandardDataCreate&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; &gt; (1,355,065,159 samples, 4.52%)</title><rect x="12.5" y="269" width="53.3" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="15.49" y="279.5" >Stand..</text>
+</g>
+<g >
+<title>QueryInterface&lt;gz::physics::ForwardStep::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3&gt; &gt; &gt; (4,012,036 samples, 0.01%)</title><rect x="65.9" y="285" width="0.1" height="15.0" fill="rgb(252,217,51)" rx="2" ry="2" />
+<text  x="68.86" y="295.5" ></text>
+</g>
+<g >
+<title>__libc_malloc (59,177,531 samples, 0.20%)</title><rect x="165.2" y="269" width="2.3" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="168.16" y="279.5" ></text>
+</g>
+<g >
+<title>dBodySetPosition (80,240,720 samples, 0.27%)</title><rect x="400.1" y="189" width="3.2" height="15.0" fill="rgb(248,199,47)" rx="2" ry="2" />
+<text  x="403.14" y="199.5" ></text>
+</g>
+<g >
+<title>QueryInterface&lt;gz::physics::ForwardStep::Implementation&lt;gz::physics::FeaturePolicy&lt;double, 3&gt; &gt; &gt; (5,015,045 samples, 0.02%)</title><rect x="65.8" y="301" width="0.2" height="15.0" fill="rgb(252,217,51)" rx="2" ry="2" />
+<text  x="68.82" y="311.5" ></text>
+</g>
+<g >
+<title>dart::collision::CollisionGroup::update (1,653,961,841 samples, 5.51%)</title><rect x="899.3" y="237" width="65.1" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="902.32" y="247.5" >dart::c..</text>
+</g>
+<g >
+<title>convert (13,039,117 samples, 0.04%)</title><rect x="1122.7" y="285" width="0.5" height="15.0" fill="rgb(245,188,44)" rx="2" ry="2" />
+<text  x="1125.70" y="295.5" ></text>
+</g>
+<g >
+<title>_int_malloc (910,732,172 samples, 3.04%)</title><rect x="862.5" y="173" width="35.8" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="865.51" y="183.5" >_in..</text>
+</g>
+<g >
+<title>dart::collision::CollisionGroup::updateEngineData (2,907,723,091 samples, 9.69%)</title><rect x="371.1" y="221" width="114.4" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="374.10" y="231.5" >dart::collisio..</text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (697,091,255 samples, 2.32%)</title><rect x="343.6" y="253" width="27.4" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="346.56" y="263.5" >[..</text>
+</g>
+<g >
+<title>__memcmp_avx2_movbe (3,009,027 samples, 0.01%)</title><rect x="65.9" y="141" width="0.1" height="15.0" fill="rgb(224,91,21)" rx="2" ry="2" />
+<text  x="68.86" y="151.5" ></text>
+</g>
+<g >
+<title>run (91,273,819 samples, 0.30%)</title><rect x="1119.1" y="157" width="3.6" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1122.11" y="167.5" ></text>
+</g>
+<g >
+<title>Copy (1,355,065,159 samples, 4.52%)</title><rect x="12.5" y="301" width="53.3" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="15.49" y="311.5" >Copy</text>
+</g>
+<g >
+<title>~Matrix (45,135,405 samples, 0.15%)</title><rect x="1092.6" y="301" width="1.8" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="1095.59" y="311.5" ></text>
+</g>
+<g >
+<title>dxSphere::computeAABB (24,072,216 samples, 0.08%)</title><rect x="833.3" y="189" width="0.9" height="15.0" fill="rgb(235,142,33)" rx="2" ry="2" />
+<text  x="836.28" y="199.5" ></text>
+</g>
+<g >
+<title>unlink_chunk (3,009,027 samples, 0.01%)</title><rect x="734.9" y="141" width="0.1" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="737.89" y="151.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::clearConstraintImpulses (5,015,045 samples, 0.02%)</title><rect x="1188.5" y="477" width="0.2" height="15.0" fill="rgb(223,82,19)" rx="2" ry="2" />
+<text  x="1191.50" y="487.5" ></text>
+</g>
+<g >
+<title>UpdateSim (13,039,117 samples, 0.04%)</title><rect x="1183.9" y="349" width="0.5" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="1186.88" y="359.5" ></text>
+</g>
+<g >
+<title>dart::constraint::ConstraintSolver::solve (5,015,045 samples, 0.02%)</title><rect x="1188.5" y="493" width="0.2" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="1191.50" y="503.5" ></text>
+</g>
+<g >
+<title>find (3,009,027 samples, 0.01%)</title><rect x="1167.6" y="285" width="0.1" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="1170.63" y="295.5" ></text>
+</g>
+<g >
+<title>coeff (87,261,783 samples, 0.29%)</title><rect x="1119.3" y="93" width="3.4" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="1122.26" y="103.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::isMobile (19,057,171 samples, 0.06%)</title><rect x="719.2" y="157" width="0.7" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="722.18" y="167.5" ></text>
+</g>
+<g >
+<title>__copy_move_a&lt;false, __gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt; &gt; (16,048,144 samples, 0.05%)</title><rect x="1186.2" y="173" width="0.6" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1189.21" y="183.5" ></text>
+</g>
+<g >
+<title>free_perturb (10,030,090 samples, 0.03%)</title><rect x="782.1" y="173" width="0.4" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="785.15" y="183.5" ></text>
+</g>
+<g >
+<title>main (29,954,863,785 samples, 99.85%)</title><rect x="10.2" y="445" width="1178.2" height="15.0" fill="rgb(243,179,42)" rx="2" ry="2" />
+<text  x="13.20" y="455.5" >main</text>
+</g>
+<g >
+<title>SpecifyData (1,358,074,186 samples, 4.53%)</title><rect x="12.4" y="333" width="53.4" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="15.41" y="343.5" >Speci..</text>
+</g>
+<g >
+<title>assignPacket&lt;16, 16, __vector (40,120,360 samples, 0.13%)</title><rect x="1091.0" y="157" width="1.6" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="1094.02" y="167.5" ></text>
+</g>
+<g >
+<title>operator new (14,042,126 samples, 0.05%)</title><rect x="734.5" y="189" width="0.6" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="737.53" y="199.5" ></text>
+</g>
+<g >
+<title>_int_malloc (1,241,725,142 samples, 4.14%)</title><rect x="12.6" y="61" width="48.8" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="15.56" y="71.5" >_int..</text>
+</g>
+<g >
+<title>Copy (39,117,351 samples, 0.13%)</title><rect x="1184.6" y="301" width="1.6" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="1187.63" y="311.5" ></text>
+</g>
+<g >
+<title>Step (28,004,011,280 samples, 93.35%)</title><rect x="65.8" y="333" width="1101.5" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="68.82" y="343.5" >Step</text>
+</g>
+<g >
+<title>pstore&lt;double, __vector (40,120,360 samples, 0.13%)</title><rect x="1091.0" y="109" width="1.6" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="1094.02" y="119.5" ></text>
+</g>
+<g >
+<title>assignPacket&lt;16, __vector (40,120,360 samples, 0.13%)</title><rect x="1091.0" y="141" width="1.6" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1094.02" y="151.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::setGravity (398,194,573 samples, 1.33%)</title><rect x="1167.9" y="285" width="15.6" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1170.87" y="295.5" ></text>
+</g>
+<g >
+<title>ExpectData (5,015,045 samples, 0.02%)</title><rect x="12.1" y="333" width="0.2" height="15.0" fill="rgb(235,142,34)" rx="2" ry="2" />
+<text  x="15.13" y="343.5" ></text>
+</g>
+<g >
+<title>__libc_free (39,117,351 samples, 0.13%)</title><rect x="1092.6" y="205" width="1.5" height="15.0" fill="rgb(223,85,20)" rx="2" ry="2" />
+<text  x="1095.59" y="215.5" ></text>
+</g>
+<g >
+<title>_set&lt;Eigen::Matrix&lt;double, -1, 1&gt; &gt; (121,364,089 samples, 0.40%)</title><rect x="1087.8" y="269" width="4.8" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="1090.82" y="279.5" ></text>
+</g>
+<g >
+<title>dart::collision::CollisionGroup::updateSkeletonSource (1,623,871,571 samples, 5.41%)</title><rect x="900.5" y="221" width="63.9" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="903.50" y="231.5" >dart::c..</text>
+</g>
+<g >
+<title>BlockImpl (40,120,360 samples, 0.13%)</title><rect x="1123.2" y="253" width="1.6" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="1126.21" y="263.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::DegreeOfFreedom::getPosition (2,725,175,453 samples, 9.08%)</title><rect x="168.4" y="285" width="107.1" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="171.36" y="295.5" >dart::dynamic..</text>
+</g>
+<g >
+<title>bool std::operator&lt; &lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; (4,012,036 samples, 0.01%)</title><rect x="65.9" y="189" width="0.1" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="68.86" y="199.5" ></text>
+</g>
+<g >
+<title>std::map&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, void*, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt; &gt;::find (4,012,036 samples, 0.01%)</title><rect x="65.9" y="253" width="0.1" height="15.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="68.86" y="263.5" ></text>
+</g>
+<g >
+<title>tcache_get_n (38,114,342 samples, 0.13%)</title><rect x="166.0" y="237" width="1.5" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="168.99" y="247.5" ></text>
+</g>
+<g >
+<title>_int_free (1,087,261,756 samples, 3.62%)</title><rect x="739.8" y="189" width="42.7" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="742.78" y="199.5" >_int..</text>
+</g>
+<g >
+<title>__memmove_avx_unaligned_erms (26,078,234 samples, 0.09%)</title><rect x="1186.8" y="77" width="1.1" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="1189.84" y="87.5" ></text>
+</g>
+<g >
+<title>coeffByOuterInner (4,012,036 samples, 0.01%)</title><rect x="1119.1" y="141" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1122.11" y="151.5" ></text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (55,165,495 samples, 0.18%)</title><rect x="1071.7" y="237" width="2.2" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1074.68" y="247.5" ></text>
+</g>
+<g >
+<title>assignCoeffByOuterInner (155,466,395 samples, 0.52%)</title><rect x="1108.6" y="157" width="6.1" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1111.57" y="167.5" ></text>
+</g>
+<g >
+<title>__uninit_copy&lt;__gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, gz::physics::WorldPose*&gt; (109,327,981 samples, 0.36%)</title><rect x="61.4" y="157" width="4.3" height="15.0" fill="rgb(216,54,13)" rx="2" ry="2" />
+<text  x="64.41" y="167.5" ></text>
+</g>
+<g >
+<title>resize (7,021,063 samples, 0.02%)</title><rect x="1089.3" y="141" width="0.3" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
+<text  x="1092.28" y="151.5" ></text>
+</g>
+<g >
+<title>_Construct&lt;gz::physics::WorldPose, const gz::physics::WorldPose&amp;&gt; (27,081,243 samples, 0.09%)</title><rect x="1185.0" y="125" width="1.1" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="1188.03" y="135.5" ></text>
+</g>
+<g >
+<title>dart::simulation::World::setGravity (399,197,582 samples, 1.33%)</title><rect x="1167.8" y="301" width="15.7" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="1170.83" y="311.5" ></text>
+</g>
+<g >
+<title>CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt;, const std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt;&amp;&gt; (27,081,243 samples, 0.09%)</title><rect x="1186.8" y="237" width="1.1" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1189.84" y="247.5" ></text>
+</g>
+<g >
+<title>CopyMapData&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt;, const std::map&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt;&amp;&gt; (1,355,065,159 samples, 4.52%)</title><rect x="12.5" y="285" width="53.3" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="15.49" y="295.5" >CopyM..</text>
+</g>
+<g >
+<title>dart::dynamics::MetaSkeleton::getPositions (4,738,214,516 samples, 15.79%)</title><rect x="137.4" y="301" width="186.3" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="140.35" y="311.5" >dart::dynamics::MetaSkel..</text>
+</g>
+<g >
+<title>operator= (83,249,747 samples, 0.28%)</title><rect x="1184.6" y="317" width="3.3" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1187.63" y="327.5" ></text>
+</g>
+<g >
+<title>__copy_move_a2&lt;false, const gz::physics::WorldPose*, gz::physics::WorldPose*&gt; (26,078,234 samples, 0.09%)</title><rect x="1186.8" y="109" width="1.1" height="15.0" fill="rgb(212,33,7)" rx="2" ry="2" />
+<text  x="1189.84" y="119.5" ></text>
+</g>
+<g >
+<title>std::char_traits&lt;char&gt;::compare (3,009,027 samples, 0.01%)</title><rect x="65.9" y="157" width="0.1" height="15.0" fill="rgb(243,176,42)" rx="2" ry="2" />
+<text  x="68.86" y="167.5" ></text>
+</g>
+<g >
+<title>PublishStats (6,018,054 samples, 0.02%)</title><rect x="10.3" y="381" width="0.3" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
+<text  x="13.32" y="391.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Joint::isKinematic (758,274,804 samples, 2.53%)</title><rect x="974.6" y="253" width="29.9" height="15.0" fill="rgb(249,203,48)" rx="2" ry="2" />
+<text  x="977.63" y="263.5" >da..</text>
+</g>
+<g >
+<title>run (121,364,089 samples, 0.40%)</title><rect x="1087.8" y="205" width="4.8" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1090.82" y="215.5" ></text>
+</g>
+<g >
+<title>ElapsedRunTime (4,012,036 samples, 0.01%)</title><rect x="1188.2" y="381" width="0.2" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="1191.22" y="391.5" ></text>
+</g>
+<g >
+<title>dart::collision::CollisionGroup::collide (1,654,964,850 samples, 5.52%)</title><rect x="899.3" y="253" width="65.1" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="902.28" y="263.5" >dart::c..</text>
+</g>
+<g >
+<title>operator=&lt;Eigen::Block&lt;const Eigen::Matrix&lt;double, 4, 4&gt;, 3, 3, false&gt; &gt; (203,610,827 samples, 0.68%)</title><rect x="1114.7" y="269" width="8.0" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1117.69" y="279.5" ></text>
+</g>
+<g >
+<title>non-virtual thunk to dart::dynamics::ShapeNode::asShapeNode (22,066,198 samples, 0.07%)</title><rect x="730.4" y="173" width="0.9" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="733.39" y="183.5" ></text>
+</g>
+<g >
+<title>dGeomMoved (41,123,369 samples, 0.14%)</title><rect x="401.7" y="173" width="1.6" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="404.68" y="183.5" ></text>
+</g>
+<g >
+<title>CreatePhysicsEntities (14,042,126 samples, 0.05%)</title><rect x="11.4" y="349" width="0.6" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="14.42" y="359.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::clearConstraintImpulses (1,695,085,210 samples, 5.65%)</title><rect x="1007.2" y="269" width="66.7" height="15.0" fill="rgb(223,82,19)" rx="2" ry="2" />
+<text  x="1010.18" y="279.5" >dart::d..</text>
+</g>
+<g >
+<title>BlockImpl_dense (40,120,360 samples, 0.13%)</title><rect x="1123.2" y="237" width="1.6" height="15.0" fill="rgb(226,100,23)" rx="2" ry="2" />
+<text  x="1126.21" y="247.5" ></text>
+</g>
+<g >
+<title>~DenseStorage (45,135,405 samples, 0.15%)</title><rect x="1092.6" y="269" width="1.8" height="15.0" fill="rgb(218,62,14)" rx="2" ry="2" />
+<text  x="1095.59" y="279.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::getParentJoint (245,737,205 samples, 0.82%)</title><rect x="964.4" y="253" width="9.6" height="15.0" fill="rgb(244,181,43)" rx="2" ry="2" />
+<text  x="967.38" y="263.5" ></text>
+</g>
+<g >
+<title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::compare (4,012,036 samples, 0.01%)</title><rect x="65.9" y="173" width="0.1" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="68.86" y="183.5" ></text>
+</g>
+<g >
+<title>copy&lt;__gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt; &gt; (16,048,144 samples, 0.05%)</title><rect x="1186.2" y="189" width="0.6" height="15.0" fill="rgb(252,220,52)" rx="2" ry="2" />
+<text  x="1189.21" y="199.5" ></text>
+</g>
+<g >
+<title>operator new (1,631,895,643 samples, 5.44%)</title><rect x="835.1" y="205" width="64.2" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="838.09" y="215.5" >operato..</text>
+</g>
+<g >
+<title>CreateJointEntities (5,015,045 samples, 0.02%)</title><rect x="11.6" y="333" width="0.2" height="15.0" fill="rgb(223,83,20)" rx="2" ry="2" />
+<text  x="14.58" y="343.5" ></text>
+</g>
+<g >
+<title>emplace_hint&lt;std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (3,009,027 samples, 0.01%)</title><rect x="12.2" y="285" width="0.1" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="15.17" y="295.5" ></text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (141,424,269 samples, 0.47%)</title><rect x="957.9" y="205" width="5.6" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="960.95" y="215.5" ></text>
+</g>
+<g >
+<title>trace (93,279,837 samples, 0.31%)</title><rect x="1119.0" y="237" width="3.7" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="1122.03" y="247.5" ></text>
+</g>
+<g >
+<title>convert (412,236,699 samples, 1.37%)</title><rect x="1108.6" y="301" width="16.2" height="15.0" fill="rgb(245,188,44)" rx="2" ry="2" />
+<text  x="1111.57" y="311.5" ></text>
+</g>
+<g >
+<title>allocate (3,009,027 samples, 0.01%)</title><rect x="12.2" y="189" width="0.1" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="15.17" y="199.5" ></text>
+</g>
+<g >
+<title>run (155,466,395 samples, 0.52%)</title><rect x="1108.6" y="221" width="6.1" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1111.57" y="231.5" ></text>
+</g>
+<g >
+<title>operator=&lt;const Eigen::Matrix&lt;double, -1, 1&gt;&amp;&gt; (349,047,132 samples, 1.16%)</title><rect x="1078.9" y="301" width="13.7" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="1081.86" y="311.5" ></text>
+</g>
+<g >
+<title>__copy_m&lt;const gz::physics::WorldPose, gz::physics::WorldPose&gt; (26,078,234 samples, 0.09%)</title><rect x="1186.8" y="93" width="1.1" height="15.0" fill="rgb(219,65,15)" rx="2" ry="2" />
+<text  x="1189.84" y="103.5" ></text>
+</g>
+<g >
+<title>std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;::operator (4,012,036 samples, 0.01%)</title><rect x="65.9" y="205" width="0.1" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="68.86" y="215.5" ></text>
+</g>
+<g >
+<title>ldexp@plt (6,018,054 samples, 0.02%)</title><rect x="834.4" y="205" width="0.2" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="837.38" y="215.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::SkeletonRefCountingBase::decrementReferenceCount (227,683,043 samples, 0.76%)</title><rect x="719.9" y="157" width="9.0" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="722.93" y="167.5" ></text>
+</g>
+<g >
+<title>call_assignment_no_alias&lt;Eigen::Matrix&lt;double, 3, 1&gt;, Eigen::Block&lt;const Eigen::Matrix&lt;double, 4, 4&gt;, 3, 1, true&gt;, Eigen::internal::assign_op&lt;double, double&gt; &gt; (155,466,395 samples, 0.52%)</title><rect x="1108.6" y="237" width="6.1" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="1111.57" y="247.5" ></text>
+</g>
+<g >
+<title>operator= (34,102,306 samples, 0.11%)</title><rect x="1184.8" y="221" width="1.3" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1187.75" y="231.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::isMobile (113,340,017 samples, 0.38%)</title><rect x="1073.9" y="285" width="4.4" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="1076.85" y="295.5" ></text>
+</g>
+<g >
+<title>dxGeom::computePosr (767,301,885 samples, 2.56%)</title><rect x="803.1" y="189" width="30.2" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="806.10" y="199.5" >dx..</text>
+</g>
+<g >
+<title>_M_get_node (3,009,027 samples, 0.01%)</title><rect x="12.2" y="221" width="0.1" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="15.17" y="231.5" ></text>
+</g>
+<g >
+<title>ignoresCollision (11,033,099 samples, 0.04%)</title><rect x="1189.6" y="493" width="0.4" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="1192.57" y="503.5" ></text>
+</g>
+<g >
+<title>_M_emplace_hint_unique&lt;std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (3,009,027 samples, 0.01%)</title><rect x="12.2" y="269" width="0.1" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="15.17" y="279.5" ></text>
+</g>
+<g >
+<title>dxSpace::dirty (14,042,126 samples, 0.05%)</title><rect x="402.7" y="157" width="0.6" height="15.0" fill="rgb(223,83,19)" rx="2" ry="2" />
+<text  x="405.74" y="167.5" ></text>
+</g>
+<g >
+<title>__ldexp (42,126,378 samples, 0.14%)</title><rect x="735.6" y="205" width="1.7" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="738.63" y="215.5" ></text>
+</g>
+<g >
+<title>_M_allocate (1,241,725,142 samples, 4.14%)</title><rect x="12.6" y="157" width="48.8" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="15.56" y="167.5" >_M_a..</text>
+</g>
+<g >
+<title>__copy_move_a&lt;false, __gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt; &gt; (26,078,234 samples, 0.09%)</title><rect x="1186.8" y="141" width="1.1" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1189.84" y="151.5" ></text>
+</g>
+<g >
+<title>memcpy@plt (7,021,063 samples, 0.02%)</title><rect x="168.1" y="269" width="0.3" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="171.08" y="279.5" ></text>
+</g>
+<g >
+<title>__copy_move_a1&lt;false, const gz::physics::WorldPose*, gz::physics::WorldPose*&gt; (16,048,144 samples, 0.05%)</title><rect x="1186.2" y="157" width="0.6" height="15.0" fill="rgb(218,62,15)" rx="2" ry="2" />
+<text  x="1189.21" y="167.5" ></text>
+</g>
+<g >
+<title>WorldPoses (1,351,053,123 samples, 4.50%)</title><rect x="12.6" y="221" width="53.1" height="15.0" fill="rgb(232,125,30)" rx="2" ry="2" />
+<text  x="15.56" y="231.5" >World..</text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::clearConstraintImpulse (856,569,686 samples, 2.86%)</title><rect x="1040.2" y="253" width="33.7" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="1043.16" y="263.5" >da..</text>
+</g>
+<g >
+<title>ExpectData (5,015,045 samples, 0.02%)</title><rect x="12.1" y="317" width="0.2" height="15.0" fill="rgb(235,142,34)" rx="2" ry="2" />
+<text  x="15.13" y="327.5" ></text>
+</g>
+<g >
+<title>dart::collision::OdeCollisionObject::updateEngineData (2,763,289,795 samples, 9.21%)</title><rect x="376.8" y="205" width="108.7" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="379.78" y="215.5" >dart::collisi..</text>
+</g>
+<g >
+<title>dart::collision::BodyNodeCollisionFilter::ignoresCollision (2,791,374,047 samples, 9.30%)</title><rect x="619.6" y="173" width="109.8" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="622.65" y="183.5" >dart::collisi..</text>
+</g>
+<g >
+<title>__libc_malloc (1,561,685,013 samples, 5.21%)</title><rect x="836.9" y="189" width="61.4" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="839.91" y="199.5" >__libc..</text>
+</g>
+<g >
+<title>__do_uninit_copy&lt;__gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, gz::physics::WorldPose*&gt; (109,327,981 samples, 0.36%)</title><rect x="61.4" y="141" width="4.3" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="64.41" y="151.5" ></text>
+</g>
+<g >
+<title>__dynamic_cast@plt (7,021,063 samples, 0.02%)</title><rect x="964.1" y="205" width="0.3" height="15.0" fill="rgb(243,176,42)" rx="2" ry="2" />
+<text  x="967.10" y="215.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt; &gt;::find (4,012,036 samples, 0.01%)</title><rect x="65.9" y="237" width="0.1" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="68.86" y="247.5" ></text>
+</g>
+<g >
+<title>allocate (1,241,725,142 samples, 4.14%)</title><rect x="12.6" y="109" width="48.8" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="15.56" y="119.5" >allo..</text>
+</g>
+<g >
+<title>dart::collision::CollisionObject::getShapeFrame (7,021,063 samples, 0.02%)</title><rect x="631.6" y="157" width="0.3" height="15.0" fill="rgb(236,146,35)" rx="2" ry="2" />
+<text  x="634.60" y="167.5" ></text>
+</g>
+<g >
+<title>alloc_perturb (4,012,036 samples, 0.01%)</title><rect x="868.3" y="157" width="0.2" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="871.31" y="167.5" ></text>
+</g>
+<g >
+<title>unlink_chunk (40,120,360 samples, 0.13%)</title><rect x="780.6" y="141" width="1.5" height="15.0" fill="rgb(236,146,34)" rx="2" ry="2" />
+<text  x="783.57" y="151.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Frame::getWorldTransform (1,146,439,287 samples, 3.82%)</title><rect x="440.4" y="189" width="45.1" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="443.38" y="199.5" >dart..</text>
+</g>
+<g >
+<title>_M_destroy_node (4,012,036 samples, 0.01%)</title><rect x="1184.4" y="317" width="0.2" height="15.0" fill="rgb(223,83,20)" rx="2" ry="2" />
+<text  x="1187.40" y="327.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::clearConstraintImpulse (7,021,063 samples, 0.02%)</title><rect x="1189.3" y="477" width="0.3" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="1192.29" y="487.5" ></text>
+</g>
+<g >
+<title>Copy (16,048,144 samples, 0.05%)</title><rect x="1186.2" y="285" width="0.6" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="1189.21" y="295.5" ></text>
+</g>
+<g >
+<title>hasNaN (12,036,108 samples, 0.04%)</title><rect x="1078.3" y="301" width="0.5" height="15.0" fill="rgb(237,151,36)" rx="2" ry="2" />
+<text  x="1081.31" y="311.5" ></text>
+</g>
+<g >
+<title>operator= (83,249,747 samples, 0.28%)</title><rect x="1184.6" y="349" width="3.3" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1187.63" y="359.5" ></text>
+</g>
+<g >
+<title>dart::constraint::ConstraintSolver::updateConstraints (5,015,045 samples, 0.02%)</title><rect x="1188.7" y="493" width="0.2" height="15.0" fill="rgb(239,160,38)" rx="2" ry="2" />
+<text  x="1191.70" y="503.5" ></text>
+</g>
+<g >
+<title>gz-sim-main (29,999,999,190 samples, 100.00%)</title><rect x="10.0" y="509" width="1180.0" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="13.00" y="519.5" >gz-sim-main</text>
+</g>
+<g >
+<title>~MakeCloneable (4,012,036 samples, 0.01%)</title><rect x="1184.4" y="205" width="0.2" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="1187.40" y="215.5" ></text>
+</g>
+<g >
+<title>Write (1,854,563,641 samples, 6.18%)</title><rect x="1094.4" y="317" width="72.9" height="15.0" fill="rgb(235,138,33)" rx="2" ry="2" />
+<text  x="1097.37" y="327.5" >Write</text>
+</g>
+<g >
+<title>aligned_free (45,135,405 samples, 0.15%)</title><rect x="1092.6" y="221" width="1.8" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="1095.59" y="231.5" ></text>
+</g>
+<g >
+<title>conditional_aligned_free&lt;true&gt; (45,135,405 samples, 0.15%)</title><rect x="1092.6" y="237" width="1.8" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="1095.59" y="247.5" ></text>
+</g>
+<g >
+<title>resize (7,021,063 samples, 0.02%)</title><rect x="1089.3" y="157" width="0.3" height="15.0" fill="rgb(212,36,8)" rx="2" ry="2" />
+<text  x="1092.28" y="167.5" ></text>
+</g>
+<g >
+<title>dxHashSpace::cleanGeoms (973,921,739 samples, 3.25%)</title><rect x="795.9" y="205" width="38.3" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="798.92" y="215.5" >dxH..</text>
+</g>
+<g >
+<title>__frexp (13,039,117 samples, 0.04%)</title><rect x="735.1" y="205" width="0.5" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="738.12" y="215.5" ></text>
+</g>
+<g >
+<title>tcache_put (5,015,045 samples, 0.02%)</title><rect x="1093.9" y="173" width="0.2" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="1096.94" y="183.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::MetaSkeleton::getPositions (10,030,090 samples, 0.03%)</title><rect x="1188.9" y="493" width="0.4" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="1191.90" y="503.5" ></text>
+</g>
+<g >
+<title>~MakeCloneable (3,009,027 samples, 0.01%)</title><rect x="1184.4" y="189" width="0.2" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="1187.44" y="199.5" ></text>
+</g>
+<g >
+<title>_int_free_maybe_consolidate (550,651,941 samples, 1.84%)</title><rect x="760.5" y="173" width="21.6" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="763.49" y="183.5" >_..</text>
+</g>
+<g >
+<title>EntityCast&lt;gz::sim::v11::systems::PhysicsPrivate::GravityFeatureList&gt; (6,018,054 samples, 0.02%)</title><rect x="1167.6" y="301" width="0.2" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="1170.55" y="311.5" ></text>
+</g>
+<g >
+<title>PostUpdate (15,045,135 samples, 0.05%)</title><rect x="10.7" y="365" width="0.6" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="13.75" y="375.5" ></text>
+</g>
+<g >
+<title>dart::simulation::World::step (19,184,553,143 samples, 63.95%)</title><rect x="323.7" y="301" width="754.6" height="15.0" fill="rgb(219,65,15)" rx="2" ry="2" />
+<text  x="326.72" y="311.5" >dart::simulation::World::step</text>
+</g>
+<g >
+<title>equal&lt;double&gt; (11,033,099 samples, 0.04%)</title><rect x="1108.1" y="285" width="0.5" height="15.0" fill="rgb(210,27,6)" rx="2" ry="2" />
+<text  x="1111.14" y="295.5" ></text>
+</g>
+<g >
+<title>_mm_store_pd (40,120,360 samples, 0.13%)</title><rect x="1091.0" y="93" width="1.6" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="1094.02" y="103.5" ></text>
+</g>
+<g >
+<title>assignCoeff (155,466,395 samples, 0.52%)</title><rect x="1108.6" y="141" width="6.1" height="15.0" fill="rgb(226,100,23)" rx="2" ry="2" />
+<text  x="1111.57" y="151.5" ></text>
+</g>
+<g >
+<title>~PlainObjectBase (45,135,405 samples, 0.15%)</title><rect x="1092.6" y="285" width="1.8" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="1095.59" y="295.5" ></text>
+</g>
+<g >
+<title>EachNew&lt;gz::sim::v11::components::Component&lt;std::add_lvalue_reference&lt;void&gt;, gz::sim::v11::components::ModelTag, gz::sim::v11::serializers::DefaultSerializer&lt;std::add_lvalue_reference&lt;void&gt; &gt; &gt;, gz::sim::v11::components::Component&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, gz::sim::v11::components::NameTag, gz::sim::v11::serializers::StringSerializer&gt;, gz::sim::v11::components::Component&lt;gz::math::v10::Pose3&lt;double&gt;, gz::sim::v11::components::PoseTag, gz::sim::v11::serializers::DefaultSerializer&lt;gz::math::v10::Pose3&lt;double&gt; &gt; &gt;, gz::sim::v11::components::Component&lt;long unsigned int, gz::sim::v11::components::ParentEntityTag, gz::sim::v11::serializers::DefaultSerializer&lt;long unsigned int&gt; &gt;, gz::sim::v11::systems::PhysicsPrivate::CreateModelEntities (3,009,027 samples, 0.01%)</title><rect x="11.8" y="317" width="0.1" height="15.0" fill="rgb(215,49,11)" rx="2" ry="2" />
+<text  x="14.81" y="327.5" ></text>
+</g>
+<g >
+<title>redux&lt;Eigen::internal::scalar_sum_op&lt;double, double&gt; &gt; (93,279,837 samples, 0.31%)</title><rect x="1119.0" y="205" width="3.7" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1122.03" y="215.5" ></text>
+</g>
+<g >
+<title>checked_request2size (14,042,126 samples, 0.05%)</title><rect x="868.5" y="157" width="0.5" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="871.47" y="167.5" ></text>
+</g>
+<g >
+<title>dBodySetQuaternion (645,937,796 samples, 2.15%)</title><rect x="403.5" y="189" width="25.4" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="406.49" y="199.5" >d..</text>
+</g>
+<g >
+<title>Component&lt;gz::sim::v11::components::Component&lt;sdf::v17::Scene, gz::sim::v11::components::SceneTag, gz::sim::v11::serializers::ComponentToMsgSerializer&lt;sdf::v17::Scene, gz::msgs::Scene&gt; &gt; &gt; (3,009,027 samples, 0.01%)</title><rect x="10.7" y="349" width="0.2" height="15.0" fill="rgb(213,37,8)" rx="2" ry="2" />
+<text  x="13.75" y="359.5" ></text>
+</g>
+<g >
+<title>destroy&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (4,012,036 samples, 0.01%)</title><rect x="1184.4" y="285" width="0.2" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="1187.40" y="295.5" ></text>
+</g>
+<g >
+<title>__libc_start_main_impl (29,954,863,785 samples, 99.85%)</title><rect x="10.2" y="477" width="1178.2" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="13.20" y="487.5" >__libc_start_main_impl</text>
+</g>
+<g >
+<title>StandardDataCopy&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; &gt; (35,105,315 samples, 0.12%)</title><rect x="1184.7" y="269" width="1.4" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="1187.71" y="279.5" ></text>
+</g>
+<g >
+<title>UpdatePhysics (418,254,753 samples, 1.39%)</title><rect x="1167.4" y="349" width="16.5" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1170.43" y="359.5" ></text>
+</g>
+<g >
+<title>Run (29,954,863,785 samples, 99.85%)</title><rect x="10.2" y="429" width="1178.2" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="13.20" y="439.5" >Run</text>
+</g>
+<g >
+<title>dart::constraint::ConstraintSolver::updateConstraints (17,266,799,935 samples, 57.56%)</title><rect x="325.3" y="269" width="679.2" height="15.0" fill="rgb(239,160,38)" rx="2" ry="2" />
+<text  x="328.30" y="279.5" >dart::constraint::ConstraintSolver::updateConstraints</text>
+</g>
+<g >
+<title>_Vector_base (1,241,725,142 samples, 4.14%)</title><rect x="12.6" y="189" width="48.8" height="15.0" fill="rgb(230,118,28)" rx="2" ry="2" />
+<text  x="15.56" y="199.5" >_Vec..</text>
+</g>
+<g >
+<title>dBodySetPosition@plt (5,015,045 samples, 0.02%)</title><rect x="403.3" y="189" width="0.2" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="406.29" y="199.5" ></text>
+</g>
+<g >
+<title>Copy (34,102,306 samples, 0.11%)</title><rect x="1184.8" y="253" width="1.3" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="1187.75" y="263.5" ></text>
+</g>
+<g >
+<title>StandardDataCopy&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; &gt; (26,078,234 samples, 0.09%)</title><rect x="1186.8" y="221" width="1.1" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="1189.84" y="231.5" ></text>
+</g>
+<g >
+<title>Clone (1,353,059,141 samples, 4.51%)</title><rect x="12.5" y="253" width="53.2" height="15.0" fill="rgb(252,220,52)" rx="2" ry="2" />
+<text  x="15.49" y="263.5" >Clone</text>
+</g>
+<g >
+<title>[libode.so.8.0.2] (97,291,873 samples, 0.32%)</title><rect x="731.3" y="205" width="3.8" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="734.26" y="215.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::getNumDofs (105,315,945 samples, 0.35%)</title><rect x="319.6" y="285" width="4.1" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="322.58" y="295.5" ></text>
+</g>
+<g >
+<title>__copy_m&lt;const gz::physics::WorldPose, gz::physics::WorldPose&gt; (16,048,144 samples, 0.05%)</title><rect x="1186.2" y="125" width="0.6" height="15.0" fill="rgb(219,65,15)" rx="2" ry="2" />
+<text  x="1189.21" y="135.5" ></text>
+</g>
+<g >
+<title>__uninitialized_copy_a&lt;__gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, gz::physics::WorldPose*, gz::physics::WorldPose&gt; (33,099,297 samples, 0.11%)</title><rect x="1184.8" y="189" width="1.3" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="1187.79" y="199.5" ></text>
+</g>
+<g >
+<title>__libc_malloc (3,009,027 samples, 0.01%)</title><rect x="12.2" y="157" width="0.1" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="15.17" y="167.5" ></text>
+</g>
+<g >
+<title>run&lt;Eigen::Quaternion&lt;double&gt; &gt; (161,484,449 samples, 0.54%)</title><rect x="1116.3" y="253" width="6.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="1119.34" y="263.5" ></text>
+</g>
+<g >
+<title>_set_noalias&lt;Eigen::Block&lt;const Eigen::Matrix&lt;double, 4, 4&gt;, 3, 1, true&gt; &gt; (155,466,395 samples, 0.52%)</title><rect x="1108.6" y="253" width="6.1" height="15.0" fill="rgb(247,195,46)" rx="2" ry="2" />
+<text  x="1111.57" y="263.5" ></text>
+</g>
+<g >
+<title>dxBox::computeAABB (52,156,468 samples, 0.17%)</title><rect x="798.5" y="189" width="2.1" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="801.52" y="199.5" ></text>
+</g>
+<g >
+<title>operator= (27,081,243 samples, 0.09%)</title><rect x="1186.8" y="269" width="1.1" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1189.84" y="279.5" ></text>
+</g>
+<g >
+<title>frexp@plt (4,012,036 samples, 0.01%)</title><rect x="834.2" y="205" width="0.2" height="15.0" fill="rgb(233,129,30)" rx="2" ry="2" />
+<text  x="837.22" y="215.5" ></text>
+</g>
+<g >
+<title>_M_erase (6,018,054 samples, 0.02%)</title><rect x="1184.4" y="349" width="0.2" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="1187.40" y="359.5" ></text>
+</g>
+<g >
+<title>find (3,009,027 samples, 0.01%)</title><rect x="1167.6" y="269" width="0.1" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="1170.63" y="279.5" ></text>
+</g>
+<g >
+<title>run (87,261,783 samples, 0.29%)</title><rect x="1119.3" y="141" width="3.4" height="15.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1122.26" y="151.5" ></text>
+</g>
+<g >
+<title>tcache_get (38,114,342 samples, 0.13%)</title><rect x="166.0" y="253" width="1.5" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="168.99" y="263.5" ></text>
+</g>
+<g >
+<title>__uninit_copy&lt;__gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, gz::physics::WorldPose*&gt; (33,099,297 samples, 0.11%)</title><rect x="1184.8" y="157" width="1.3" height="15.0" fill="rgb(216,54,13)" rx="2" ry="2" />
+<text  x="1187.79" y="167.5" ></text>
+</g>
+<g >
+<title>_M_create_storage (1,241,725,142 samples, 4.14%)</title><rect x="12.6" y="173" width="48.8" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="15.56" y="183.5" >_M_c..</text>
+</g>
+<g >
+<title>operator new (3,009,027 samples, 0.01%)</title><rect x="12.2" y="173" width="0.1" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="15.17" y="183.5" ></text>
+</g>
+<g >
+<title>__uninitialized_copy_a&lt;__gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, gz::physics::WorldPose*, gz::physics::WorldPose&gt; (109,327,981 samples, 0.36%)</title><rect x="61.4" y="189" width="4.3" height="15.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="64.41" y="199.5" ></text>
+</g>
+<g >
+<title>dGeomIsSpace@plt (10,030,090 samples, 0.03%)</title><rect x="612.8" y="189" width="0.4" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="615.82" y="199.5" ></text>
+</g>
+<g >
+<title>dxCylinder::computeAABB (64,192,576 samples, 0.21%)</title><rect x="800.6" y="189" width="2.5" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="803.57" y="199.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::SkeletonRefCountingBase::incrementReferenceCount (905,717,127 samples, 3.02%)</title><rect x="683.6" y="141" width="35.6" height="15.0" fill="rgb(226,101,24)" rx="2" ry="2" />
+<text  x="686.56" y="151.5" >dar..</text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (284,854,556 samples, 0.95%)</title><rect x="620.4" y="157" width="11.2" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="623.40" y="167.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::BodyNode::asSoftBodyNode (10,030,090 samples, 0.03%)</title><rect x="1006.7" y="253" width="0.4" height="15.0" fill="rgb(215,49,11)" rx="2" ry="2" />
+<text  x="1009.67" y="263.5" ></text>
+</g>
+<g >
+<title>allocate (1,241,725,142 samples, 4.14%)</title><rect x="12.6" y="125" width="48.8" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="15.56" y="135.5" >allo..</text>
+</g>
+<g >
+<title>coeff (87,261,783 samples, 0.29%)</title><rect x="1119.3" y="109" width="3.4" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="1122.26" y="119.5" ></text>
+</g>
+<g >
+<title>dxHashSpace::collide (10,520,561,401 samples, 35.07%)</title><rect x="485.5" y="221" width="413.8" height="15.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="488.47" y="231.5" >dxHashSpace::collide</text>
+</g>
+<g >
+<title>__copy_move_a2&lt;false, const gz::physics::WorldPose*, gz::physics::WorldPose*&gt; (16,048,144 samples, 0.05%)</title><rect x="1186.2" y="141" width="0.6" height="15.0" fill="rgb(212,33,7)" rx="2" ry="2" />
+<text  x="1189.21" y="151.5" ></text>
+</g>
+<g >
+<title>CompositeData (1,355,065,159 samples, 4.52%)</title><rect x="12.5" y="317" width="53.3" height="15.0" fill="rgb(254,226,54)" rx="2" ry="2" />
+<text  x="15.49" y="327.5" >Compo..</text>
+</g>
+<g >
+<title>operator= (34,102,306 samples, 0.11%)</title><rect x="1184.8" y="237" width="1.3" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1187.75" y="247.5" ></text>
+</g>
+<g >
+<title>linear (40,120,360 samples, 0.13%)</title><rect x="1123.2" y="285" width="1.6" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="1126.21" y="295.5" ></text>
+</g>
+<g >
+<title>_Auto_node&lt;std::pair&lt;gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; (3,009,027 samples, 0.01%)</title><rect x="12.2" y="253" width="0.1" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="15.17" y="263.5" ></text>
+</g>
+<g >
+<title>HasConnections (8,024,072 samples, 0.03%)</title><rect x="10.9" y="349" width="0.3" height="15.0" fill="rgb(217,58,14)" rx="2" ry="2" />
+<text  x="13.87" y="359.5" ></text>
+</g>
+<g >
+<title>__memset_avx2_unaligned_erms (340,020,051 samples, 1.13%)</title><rect x="782.5" y="205" width="13.4" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="785.54" y="215.5" ></text>
+</g>
+<g >
+<title>view&lt;const gz::sim::v11::NewEntity, const gz::sim::v11::components::Component&lt;std::add_lvalue_reference&lt;void&gt;, gz::sim::v11::components::CollisionTag, gz::sim::v11::serializers::DefaultSerializer&lt;std::add_lvalue_reference&lt;void&gt; &gt; &gt;, const gz::sim::v11::components::Component&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, gz::sim::v11::components::NameTag, gz::sim::v11::serializers::StringSerializer&gt;, const gz::sim::v11::components::Component&lt;gz::math::v10::Pose3&lt;double&gt;, gz::sim::v11::components::PoseTag, gz::sim::v11::serializers::DefaultSerializer&lt;gz::math::v10::Pose3&lt;double&gt; &gt; &gt;, const gz::sim::v11::components::Component&lt;sdf::v17::Geometry, gz::sim::v11::components::GeometryTag, gz::sim::v11::serializers::ComponentToMsgSerializer&lt;sdf::v17::Geometry, gz::msgs::Geometry&gt; &gt;, const gz::sim::v11::components::Component&lt;sdf::v17::Collision, gz::sim::v11::components::CollisionElementTag, gz::sim::v11::serializers::ComponentToMsgSerializer&lt;sdf::v17::Collision, gz::msgs::Collision&gt; &gt;, const gz::sim::v11::components::Component&lt;long unsigned int, gz::sim::v11::components::ParentEntityTag, gz::sim::v11::serializers::DefaultSerializer&lt;long unsigned int&gt; &gt; &gt; (4,012,036 samples, 0.01%)</title><rect x="11.4" y="301" width="0.2" height="15.0" fill="rgb(230,118,28)" rx="2" ry="2" />
+<text  x="14.42" y="311.5" ></text>
+</g>
+<g >
+<title>operator= (27,081,243 samples, 0.09%)</title><rect x="1186.8" y="285" width="1.1" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1189.84" y="295.5" ></text>
+</g>
+<g >
+<title>malloc@plt (24,072,216 samples, 0.08%)</title><rect x="898.3" y="189" width="1.0" height="15.0" fill="rgb(246,192,46)" rx="2" ry="2" />
+<text  x="901.33" y="199.5" ></text>
+</g>
+<g >
+<title>__libc_free (1,150,451,323 samples, 3.83%)</title><rect x="737.3" y="205" width="45.2" height="15.0" fill="rgb(223,85,20)" rx="2" ry="2" />
+<text  x="740.29" y="215.5" >__li..</text>
+</g>
+<g >
+<title>pstoret&lt;double, __vector (40,120,360 samples, 0.13%)</title><rect x="1091.0" y="125" width="1.6" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="1094.02" y="135.5" ></text>
+</g>
+<g >
+<title>_init1&lt;Eigen::Block&lt;const Eigen::Matrix&lt;double, 4, 4&gt;, 3, 1, true&gt;, Eigen::Block&lt;const Eigen::Matrix&lt;double, 4, 4&gt;, 3, 1, true&gt; &gt; (155,466,395 samples, 0.52%)</title><rect x="1108.6" y="269" width="6.1" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="1111.57" y="279.5" ></text>
+</g>
+<g >
+<title>dart::dynamics::Skeleton::dirtySupportPolygon (8,024,072 samples, 0.03%)</title><rect x="1183.2" y="269" width="0.3" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="1186.21" y="279.5" ></text>
+</g>
+<g >
+<title>operator= (83,249,747 samples, 0.28%)</title><rect x="1184.6" y="333" width="3.3" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1187.63" y="343.5" ></text>
+</g>
+<g >
+<title>Block (40,120,360 samples, 0.13%)</title><rect x="1123.2" y="269" width="1.6" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="1126.21" y="279.5" ></text>
+</g>
+<g >
+<title>operator= (16,048,144 samples, 0.05%)</title><rect x="1186.2" y="205" width="0.6" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1189.21" y="215.5" ></text>
+</g>
+<g >
+<title>StandardDataCopy&lt;std::_Rb_tree_const_iterator&lt;std::pair&lt;const gz::physics::CompositeData::TypeName, gz::physics::CompositeData::DataEntry&gt; &gt; &gt; (16,048,144 samples, 0.05%)</title><rect x="1186.2" y="253" width="0.6" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="1189.21" y="263.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt;, std::_Select1st&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt;, std::less&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt;, std::allocator&lt;std::pair&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; const, void*&gt; &gt; &gt;::_M_lower_bound (4,012,036 samples, 0.01%)</title><rect x="65.9" y="221" width="0.1" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="68.86" y="231.5" ></text>
+</g>
+<g >
+<title>operator= (16,048,144 samples, 0.05%)</title><rect x="1186.2" y="221" width="0.6" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1189.21" y="231.5" ></text>
+</g>
+<g >
+<title>allocate (3,009,027 samples, 0.01%)</title><rect x="12.2" y="205" width="0.1" height="15.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="15.17" y="215.5" ></text>
+</g>
+<g >
+<title>dart::collision::OdeCollisionDetector::collide (13,430,290,510 samples, 44.77%)</title><rect x="371.0" y="237" width="528.3" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="374.02" y="247.5" >dart::collision::OdeCollisionDetector::collide</text>
+</g>
+<g >
+<title>_int_free (9,027,081 samples, 0.03%)</title><rect x="732.3" y="173" width="0.4" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="735.32" y="183.5" ></text>
+</g>
+<g >
+<title>copy&lt;__gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, __gnu_cxx::__normal_iterator&lt;gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt; &gt; (26,078,234 samples, 0.09%)</title><rect x="1186.8" y="157" width="1.1" height="15.0" fill="rgb(252,220,52)" rx="2" ry="2" />
+<text  x="1189.84" y="167.5" ></text>
+</g>
+<g >
+<title>Update (29,913,740,416 samples, 99.71%)</title><rect x="11.4" y="365" width="1176.6" height="15.0" fill="rgb(216,53,12)" rx="2" ry="2" />
+<text  x="14.38" y="375.5" >Update</text>
+</g>
+<g >
+<title>[libdart.so.6.13.2] (3,009,027 samples, 0.01%)</title><rect x="1188.7" y="477" width="0.1" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1191.70" y="487.5" ></text>
+</g>
+<g >
+<title>call_assignment_no_alias&lt;Eigen::Matrix&lt;double, -1, 1&gt;, Eigen::Matrix&lt;double, -1, 1&gt;, Eigen::internal::assign_op&lt;double, double&gt; &gt; (121,364,089 samples, 0.40%)</title><rect x="1087.8" y="221" width="4.8" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="1090.82" y="231.5" ></text>
+</g>
+<g >
+<title>tcache_put (14,042,126 samples, 0.05%)</title><rect x="869.0" y="157" width="0.6" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="872.02" y="167.5" ></text>
+</g>
+<g >
+<title>call_dense_assignment_loop&lt;Eigen::Matrix&lt;double, 3, 1&gt;, Eigen::Block&lt;const Eigen::Matrix&lt;double, 4, 4&gt;, 3, 1, true&gt;, Eigen::internal::assign_op&lt;double, double&gt; &gt; (155,466,395 samples, 0.52%)</title><rect x="1108.6" y="205" width="6.1" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="1111.57" y="215.5" ></text>
+</g>
+<g >
+<title>Step (29,948,845,731 samples, 99.83%)</title><rect x="10.2" y="397" width="1178.0" height="15.0" fill="rgb(252,216,51)" rx="2" ry="2" />
+<text  x="13.20" y="407.5" >Step</text>
+</g>
+<g >
+<title>__do_uninit_copy&lt;__gnu_cxx::__normal_iterator&lt;const gz::physics::WorldPose*, std::vector&lt;gz::physics::WorldPose&gt; &gt;, gz::physics::WorldPose*&gt; (33,099,297 samples, 0.11%)</title><rect x="1184.8" y="141" width="1.3" height="15.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="1187.79" y="151.5" ></text>
+</g>
+<g >
+<title>__memmove_avx_unaligned_erms (15,045,135 samples, 0.05%)</title><rect x="1186.3" y="109" width="0.5" height="15.0" fill="rgb(205,0,0)" rx="2" ry="2" />
+<text  x="1189.25" y="119.5" ></text>
+</g>
+</g>
+</svg>

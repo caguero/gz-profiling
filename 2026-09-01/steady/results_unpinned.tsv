@@ -1,0 +1,15 @@
+cfg	world	steps_per_s	RTF	diter	dreal
+base	3k_shapes_static	238.5	0.239	4907	20.57
+base	3k_shapes	14.4	0.014	296	20.60
+base	sensors	50644.5	50.644	1041633	20.57
+base	jetty	495.4	1.981	10191	20.57
+base	gpu_lidar_sensor	50155.9	50.156	1031747	20.57
+base	sensors_demo	5335.3	5.335	109762	20.57
+base	moving_robots_and_sensors	3015.0	3.015	62011	20.57
+pr12	3k_shapes_static	440.3	0.440	9058	20.57
+pr12	3k_shapes	14.7	0.015	303	20.59
+pr12	sensors	51615.8	51.616	1061730	20.57
+pr12	jetty	505.9	2.024	10407	20.57
+pr12	gpu_lidar_sensor	52405.7	52.406	1078019	20.57
+pr12	sensors_demo	5005.3	5.005	102949	20.57
+pr12	moving_robots_and_sensors	3059.3	3.059	62931	20.57
