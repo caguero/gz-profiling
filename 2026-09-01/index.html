@@ -99,11 +99,12 @@
 
 
   <h2 id="after1">Priority 1 validated: per step bookkeeping around dartsim <code>WorldForwardStep</code></h2>
-  <p class="note">The server report's Priority 1 was implemented as two pull requests: gz-sim returns the cached step output by reference instead of copying it twice per step,
-  and dartsim skips the NaN check and the <code>ChangedWorldPoses</code> pass for static models. Steady state step rate
+  <p class="note">The server report's Priority 1 was implemented in two parts: gz-sim returns the cached step output by reference instead of copying it twice per step
+  (merged upstream as gz-sim #3850 on 2026-09-01), and dartsim skips the NaN check and the <code>ChangedWorldPoses</code> pass for static models
+  (gz-physics branch <code>caguero/dartsim_static_bookkeeping</code>). Steady state step rate
   (two stats snapshots 20 s apart, median of two interleaved runs pinned to one P core), same worlds and build:</p>
   <table>
-    <tr><th>World</th><th>Before</th><th>gz-sim PR only</th><th>Both PRs</th><th>Change</th></tr>
+    <tr><th>World</th><th>Before</th><th>gz-sim part only</th><th>Both PRs</th><th>Change</th></tr>
     <tr><td>3k_shapes_static</td><td>254 steps/s</td><td>261 steps/s</td><td>462 steps/s</td><td><strong>1.82x</strong></td></tr>
     <tr><td>sensors</td><td>49,729 steps/s</td><td>51,558 steps/s</td><td>51,982 steps/s</td><td>+4.5%</td></tr>
     <tr><td>3k_shapes</td><td>14.6 steps/s</td><td>14.6 steps/s</td><td>14.8 steps/s</td><td>+1.7%</td></tr>

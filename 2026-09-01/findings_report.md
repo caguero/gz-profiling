@@ -764,10 +764,11 @@ only writes un-queried entries and gz-sim's cached `stepOutput`, gz-sim
 
 DART does not integrate immobile skeletons, which is how dartsim represents
 static models, so none of this work can change anything for them. The
-recommended change, implemented and measured as part of this study in two
-pull requests: gz-sim returns the cached output by reference and hands it to
-`ChangedLinks` (an empty output while paused keeps the ECM fallback), and
-dartsim skips immobile skeletons in the NaN check (reading DOF positions
+recommended change, implemented and measured as part of this study: gz-sim
+returns the cached output by reference and hands it to `ChangedLinks` (an
+empty output while paused keeps the ECM fallback; merged upstream as gz-sim
+#3850 while this study was running), and dartsim (pull request on branch
+`caguero/dartsim_static_bookkeeping`) skips immobile skeletons in the NaN check (reading DOF positions
 into a preallocated buffer for the others), marks links of immobile
 skeletons as settled after one unchanged report and skips them until a pose
 command, a static toggle or a joint change invalidates them (one epoch
