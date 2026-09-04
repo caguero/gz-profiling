@@ -42,6 +42,12 @@ vehicles driven and its sensors subscribed exactly as in the server run.
 
 ## Approach
 
+Every flamegraph in this PDF is a static rendering; the caption of each
+figure links to the interactive SVG on the site (click frames to zoom,
+Ctrl+F to search), and the run page
+<https://caguero.github.io/gz-profiling/2026-09-01/> lists all of them, including the per thread splits.
+
+
 Same as July: the simulation is launched with `gz sim -r` (server and GUI,
 sim playing) and rendered on the NVIDIA GPU via PRIME offload. After a 45 s
 settle, `perf` attaches to the GUI process only and samples 30 s. Loading
@@ -242,7 +248,7 @@ Inclusive: `gz::rendering::` 79.7%; **`RenderUtil::Update` 38.7%** (of which
 
 ![3k_shapes_static GUI runtime. Two towers on the render thread:
 `RenderUtil::Update` (pose loop over all entities) on the left and
-`Ogre2Scene::PreRender` (scene graph walk) on the right.](figures/gui_3k_shapes_static_runtime.png){width=100% height=42%}
+`Ogre2Scene::PreRender` (scene graph walk) on the right. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/gui/runtime/3k_shapes_static.svg>](figures/gui_3k_shapes_static_runtime.png){width=100% height=42%}
 
 **Findings**: see summary items 1 and 2. Both towers scale with the number
 of visuals and run every frame whether or not anything moved. The server's
@@ -267,7 +273,7 @@ Inclusive: `Ogre2Scene::PreRender` 41.5%, `RenderUtil::Update` 27.1%,
 OgreNext transform update 8.5%, Forward Clustered 8.2%, refcount 8.1%,
 `dynamic_cast` 6.6%, `SetState` 5.5%, driver 4.7%.
 
-![3k_shapes_dynamic GUI runtime.](figures/gui_3k_shapes_dynamic_runtime.png){width=100% height=42%}
+![3k_shapes_dynamic GUI runtime. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/gui/runtime/3k_shapes_dynamic.svg>](figures/gui_3k_shapes_dynamic_runtime.png){width=100% height=42%}
 
 **Findings**: the dynamic world costs *less* GUI CPU than the static one
 (0.81 vs 1.04 cores; July had them equal at 1.04/1.05). By the time the
@@ -293,7 +299,7 @@ Clustered 20.6%), driver 20.0%, `pthread` 11.7%, `Ogre2Scene::PreRender`
 9.9%, `SetState` 8.7%, Qt Quick 8.6%, Zenoh 5.4%, `RenderUtil::Update` 4.9%.
 
 ![jetty GUI runtime. GL submission and lighting dominate the render thread;
-the scene graph walk is the small tower on the right.](figures/gui_jetty_runtime.png){width=100% height=42%}
+the scene graph walk is the small tower on the right. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/gui/runtime/jetty.svg>](figures/gui_jetty_runtime.png){width=100% height=42%}
 
 **Findings**: jetty is the one world where the GUI got cheaper since July
 (0.67 -> 0.49 cores). Its cost is per draw call (PBS datablocks, cubemap
@@ -328,10 +334,10 @@ Forward Clustered 15.8%, driver 10.6%, Qt Quick 12.6%, `sdf::` 1.2%.
 
 ![moving_robots_and_sensors GUI runtime. Left to right: Qt main thread
 (state deserialization), render thread, two Zenoh receive threads, Qt Quick
-render thread.](figures/gui_moving_robots_and_sensors_runtime.png){width=100% height=42%}
+render thread. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/gui/runtime/moving_robots_and_sensors.svg>](figures/gui_moving_robots_and_sensors_runtime.png){width=100% height=42%}
 
 ![Qt main thread of the mixed world: `ECM::SetState` and text
-deserialization of components.](figures/gui_moving_robots_qtmain.png){width=100% height=38%}
+deserialization of components. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/gui/threads/moving_robots_and_sensors_thread_gz-sim-gui-clie_947218.svg>](figures/gui_moving_robots_qtmain.png){width=100% height=38%}
 
 **Findings**: the server sends 2,443 state messages per second in this
 world. Three component types are in every message: the `Pose` of the
@@ -391,7 +397,7 @@ deserialization work proportional to message rate, not to entity count.
 | jetty | 17.8 s | `Ogre2Material`/`CreateMaterial` 38%, `LoadGeometry` 24%, `CreateVisual` 24%, image decoding (`stbi_*`, `Image::`) 19%, Assimp 18%, driver 16% |
 | moving_robots_and_sensors | 6.8 s | Zenoh 34%, `GuiRunner`/`SetState` 33%, protobuf 18%, driver 16% |
 
-![jetty GUI loading: mesh and material construction.](figures/gui_jetty_loading.png){width=100% height=38%}
+![jetty GUI loading: mesh and material construction. Interactive: <https://caguero.github.io/gz-profiling/2026-09-01/gui/loading/jetty.svg>](figures/gui_jetty_loading.png){width=100% height=38%}
 
 The 3k world's GUI start is dominated by the same two per frame towers as
 its runtime; the scene is built within the first seconds and the rest of
