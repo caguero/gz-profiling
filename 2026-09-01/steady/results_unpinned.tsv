@@ -13,3 +13,7 @@ pr12	jetty	505.9	2.024	10407	20.57
 pr12	gpu_lidar_sensor	52405.7	52.406	1078019	20.57
 pr12	sensors_demo	5005.3	5.005	102949	20.57
 pr12	moving_robots_and_sensors	3059.3	3.059	62931	20.57
+base	sensors_demo	5509.3	5.509	113325	20.57
+pr12	sensors_demo	5226.5	5.226	107514	20.57
+base	sensors_demo	5288.2	5.288	108796	20.57
+pr12	sensors_demo	5352.1	5.352	110092	20.57
