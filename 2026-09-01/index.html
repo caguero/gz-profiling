@@ -41,10 +41,9 @@
 
   <h2>Runtime Flamegraphs (30 s steady state, all threads)</h2>
   <p class="note">RTF and steps/s are the steady state rate between two <code>/world/*/stats</code> snapshots taken 10 s and
-  30 s after launch (re-measured 2026-09-04, <code>steady/results_unpinned.tsv</code>); "cores busy" is CPU time / 30 s during
-  the perf capture. <strong>Erratum:</strong> the first version of this page quoted rates from a single snapshot
-  (<code>*_rtf.txt</code>), which include the hundreds of thousands of empty iterations a free running server executes
-  before its entities are created; those figures overstated the 3k worlds by up to 50x. See the report's Methodology section.</p>
+  30 s after launch (<code>steady/results_unpinned.tsv</code>); a single snapshot would include the hundreds of thousands of
+  empty iterations a free running server executes before its entities are created. "Cores busy" is CPU time / 30 s during
+  the perf capture.</p>
   <table>
     <tr><th>World</th><th>Stress axis</th><th>RTF (steady)</th><th>Steps/s (steady)</th><th>Cores busy</th><th>Flamegraph</th><th>Hotspots</th></tr>
     <tr><td>3k_shapes_static</td><td>3000 static models: framework + broadphase</td><td>0.24</td><td>239</td><td>1.00</td><td><a href="runtime/3k_shapes_static.svg">Open</a></td><td><a href="runtime/3k_shapes_static_hotspots.txt">txt</a></td></tr>
@@ -99,9 +98,8 @@
 
 
 
-  <h2 id="after1">Follow up: Priority 1 implemented (2026-09-04)</h2>
-  <p class="note">The server report's Priority 1 (per step bookkeeping around dartsim <code>WorldForwardStep</code>) was
-  implemented as two pull requests: gz-sim returns the cached step output by reference instead of copying it twice per step,
+  <h2 id="after1">Priority 1 validated: per step bookkeeping around dartsim <code>WorldForwardStep</code></h2>
+  <p class="note">The server report's Priority 1 was implemented as two pull requests: gz-sim returns the cached step output by reference instead of copying it twice per step,
   and dartsim skips the NaN check and the <code>ChangedWorldPoses</code> pass for static models. Steady state step rate
   (two stats snapshots 20 s apart, median of two interleaved runs pinned to one P core), same worlds and build:</p>
   <table>

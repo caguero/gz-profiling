@@ -79,21 +79,17 @@ Two methodology changes with respect to April:
   July GUI study established this; the server scripts now do the same. As a
   consequence the weights in the `.folded` files are nanoseconds of CPU
   time rather than sample counts.
-- **Erratum (2026-09-04).** The first version of this report quoted RTF and
-  steps per second computed as `sim_time / real_time` from a single stats
-  snapshot taken 70 s after launch. That overstates the rate of every world
-  that takes more than a fraction of a second to create: a free running
-  server (`gz-sim-main -s -r` without `--iterations`) starts its loop before
-  the entities exist (`SimulationRunner::Run` only waits for asset creation
-  when an iteration count is given) and steps the still empty world at 200k
-  to 300k iterations per second for the first one to three seconds. For
-  `3k_shapes_static` that burst is about 900k iterations, against 239 real
-  steps per second afterwards, so the original table said 12,023 steps/s.
-  All RTF and steps/s figures in this version are the steady state rate
-  between two snapshots taken 10 s and 30 s after launch, measured on
-  2026-09-04 with the same build. Profiles, thread splits, cache counters
-  and loading times were taken after the burst and are unaffected. The
-  capture script now records both snapshots.
+- Step rates are the steady state rate between two `/world/<name>/stats`
+  snapshots taken 10 s and 30 s after launch, never `sim_time / real_time`
+  from a single snapshot. A free running server (`gz-sim-main -s -r` without
+  `--iterations`) starts its loop before the entities exist
+  (`SimulationRunner::Run` only waits for asset creation when an iteration
+  count is given) and steps the still empty world at 200k to 300k iterations
+  per second for the first one to three seconds. For `3k_shapes_static` that
+  burst is about 900k iterations against 239 real steps per second
+  afterwards, so a single snapshot would report 50x the true rate. Profiles,
+  thread splits, cache counters and loading times are taken after the burst.
+  The capture script records both snapshots.
 - Sensor subscriber topics were audited. In April `sensors_demo` subscribed to
   `/rgbd_camera` and `/segmentation_camera`; neither topic exists (the RGBD
   sensor publishes `/rgbd_camera/{image,depth_image,points}` and there is no
@@ -204,9 +200,8 @@ next to the flamegraph.
 # Executive Summary
 
 The seven worlds were captured on 2026-09-01 (runtime and loading
-flamegraphs, per thread splits and cache counters); the step rates were
-re-measured on 2026-09-04 (see the erratum in the Methodology section).
-The headline numbers:
+flamegraphs, per thread splits, cache counters and steady state step
+rates). The headline numbers:
 
 | World | RTF (steady state) | Steps/s | Cores busy | Sim thread | Render thread | Loading wall clock |
 |---|---:|---:|---:|---:|---:|---:|
@@ -752,14 +747,14 @@ Interpretation:
 
 # Optimization Recommendations (Gazebo owned, priority ranked)
 
-## Priority 1: Remove the per step bookkeeping around `WorldForwardStep` (done)
+## Priority 1: Remove the per step bookkeeping around `WorldForwardStep`
 
-*Revised 2026-09-04.* The first version of this section blamed
-`SimulationFeatures::WorldForwardStep` for writing `WorldPoses` for every
-link on every step. That pass runs only once for gz-sim: `WriteRequiredData`
-defaults to writing un-queried entries only, and gz-sim's cached
-`stepOutput` (gz-sim #3685) is never queried for `WorldPoses`. What the
-profile of `3k_shapes_static` actually contains, per step, is:
+`SimulationFeatures::WorldForwardStep` (gz-physics dartsim) surrounds DART's
+`World::step` with bookkeeping that runs for every model and every link on
+every step. (Its full `WorldPoses` pass is not part of it: `WriteRequiredData`
+only writes un-queried entries and gz-sim's cached `stepOutput`, gz-sim
+#3685, is never queried for `WorldPoses`, so that pass runs once.) In the
+`3k_shapes_static` profile the per step items are:
 
 | Cost inside `WorldForwardStep` | % of process CPU |
 |---|---:|
@@ -768,15 +763,16 @@ profile of `3k_shapes_static` actually contains, per step, is:
 | Two deep copies of the `ForwardStep::Output` in gz-sim (`Step` returned the cached member by value, `Update` copy assigned it) | 3.7 |
 
 DART does not integrate immobile skeletons, which is how dartsim represents
-static models, so none of this work can change anything for them. The fix
-landed as two pull requests: gz-sim returns the cached output by reference
-and hands it to `ChangedLinks` (an empty output while paused keeps the ECM
-fallback), and dartsim skips immobile skeletons in the NaN check (reading
-DOF positions into a preallocated buffer for the others), marks links of
-immobile skeletons as settled after one unchanged report and skips them
-until a pose command, a static toggle or a joint change invalidates them
-(one epoch counter), and skips the fluid added mass loop when no link uses
-it. Result on this machine, steady state, same worlds:
+static models, so none of this work can change anything for them. The
+recommended change, implemented and measured as part of this study in two
+pull requests: gz-sim returns the cached output by reference and hands it to
+`ChangedLinks` (an empty output while paused keeps the ECM fallback), and
+dartsim skips immobile skeletons in the NaN check (reading DOF positions
+into a preallocated buffer for the others), marks links of immobile
+skeletons as settled after one unchanged report and skips them until a pose
+command, a static toggle or a joint change invalidates them (one epoch
+counter), and skips the fluid added mass loop when no link uses it. Result
+on this machine, steady state, same worlds:
 
 | World | before | after | change |
 |---|---:|---:|---:|

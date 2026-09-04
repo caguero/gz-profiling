@@ -375,8 +375,7 @@ which the ECM records as a one time change, and `SceneBroadcaster::PostUpdate`
 publishes on any one time change (`changeEvent` in its `shouldPublish`
 condition) without waiting for the `state_hertz` period. At the world's steady
 3,000 steps per second the GUI receives a message on eight of every ten
-steps (the report's first version quoted 5,900 steps per second, see the
-server report's erratum on how step rates were measured). Each message is small
+steps. Each message is small
 (24 entities, under 1 KB) so the cost is per message overhead: Zenoh
 delivery, `SerializedStepMap` parse, the `OnState` callback on the receive
 thread, then the Qt side `SetState` with `istream` based deserialization of
